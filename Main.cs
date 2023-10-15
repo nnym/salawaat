@@ -78,8 +78,9 @@ top.Add(settingBox);
 date.FrameClock.Paint += (_, _) => {
 	DateTime now = new();
 
-	if (now.DayOfMonth != time.DayOfMonth && now.Second % 15 == 0) load();
-	else if (now.Second != time.Second) setDate(time = now);
+	if (now.DayOfMonth != time.DayOfMonth) {
+		if (now.Second % 15 == 0) load();
+	} else if (now.Second != time.Second) setDate(time = now);
 };
 
 refresh.Clicked += (_, _) => load();
@@ -100,8 +101,8 @@ void warning(string format, params object[] arguments) {
 
 void load(bool loadConfiguration = false) => Task.Run(() => {
 	lock (window) {
-		void finish(Action finisher) => GLib.Idle.Add(GLib.Priority.DefaultIdle, () => {
-			finisher();
+		void enbuffer(Action action) => GLib.Idle.Add(GLib.Priority.DefaultIdle, () => {
+			action();
 			return false;
 		});
 
@@ -120,7 +121,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 		}
 
 		if (new[]{year, timeZone, latitude, longitude}.Any(field => field.Text.Length == 0)) {
-			finish(() => settingExpander.Expanded = true);
+			enbuffer(() => settingExpander.Expanded = true);
 			return;
 		}
 
@@ -167,7 +168,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 		if (days == null) {
 			if (alert == null) alert = new(window, 0, MessageType.Error, ButtonsType.Close, false, "An unknown error occurred.");
 
-			finish(() => alert.Present());
+			enbuffer(() => alert.Present());
 			return;
 		}
 
@@ -175,7 +176,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 
 		var today = days[time.DayOfYear];
 
-		finish(() => {
+		enbuffer(() => {
 			string[] keys = {"fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"};
 
 			for (var i = 0; i < keys.Length; ++i) {
