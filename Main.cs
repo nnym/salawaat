@@ -21,6 +21,7 @@ window.Child = top;
 DateTime time = new();
 
 Label date = new("");
+setDate(time);
 Grid table = new() {Halign = Align.Center, RowSpacing = 8, ColumnSpacing = 8};
 Expander settingExpander = new("settings");
 
@@ -75,16 +76,9 @@ var timeFormat = settingRow(4, "12 hour time", new Switch() {Halign = Align.Star
 window.ShowAll();
 top.Add(settingBox);
 
-date.FrameClock.Paint += (_, _) => {
-	DateTime now = new();
-
-	if (now.DayOfMonth != time.DayOfMonth) {
-		if (now.Second % 15 == 0) load();
-	} else if (now.Second != time.Second) setDate(time = now);
-};
-
 refresh.Clicked += (_, _) => load();
 
+tick();
 load(true);
 
 return application.Run(application.ApplicationId, new string[0]);
@@ -99,12 +93,23 @@ void warning(string format, params object[] arguments) {
 	Console.Error.WriteLine(format, arguments);
 }
 
+void tick() => GLib.Timeout.Add((uint) (1000 - time.Microsecond / 1000), () => {
+	DateTime now = new();
+
+	if (now.DayOfMonth != time.DayOfMonth) {
+		if (now.Second % 15 == 0) load();
+	} else setDate(time = now);
+
+	tick();
+	return false;
+});
+
 void load(bool loadConfiguration = false) => Task.Run(() => {
 	lock (window) {
 		Task enbuffer(Action action) {
 			var task = new Task(action);
 
-			GLib.Idle.Add(GLib.Priority.DefaultIdle, () => {
+			GLib.Idle.Add(() => {
 				task.RunSynchronously();
 				return false;
 			});
@@ -133,7 +138,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 			return;
 		}
 
-		DateTime time = new();
+		DateTime requestTime = new();
 
 		var path = tmp + '/' + string.Join('-', year.Text, timeZone.Text, latitude.Text, longitude.Text, timeFormat.Active).Replace('/', '_');
 		debug("path " + path);
@@ -147,7 +152,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 		}
 
 		if (days == null) {
-			var url = $"https://www.moonsighting.com/time_json.php?year={year.Text}&tz={timeZone.Text}&lat={latitude.Text}&lon={longitude.Text}&method=2&both=false&time={timeFormat.Active:d}";
+			var url = $"https://www.moonsighting.com/time_json.php?year={year.Text}&tz={timeZone.Text}&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time={(timeFormat.Active ? 1 : 0)}";
 			debug("URL " + url);
 
 			var response = new HttpClient().Send(new() {RequestUri = new(url)});
@@ -182,13 +187,13 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 
 		File.WriteAllText(config, string.Join('\n', timeZone.Text, latitude.Text, longitude.Text, timeFormat.Active));
 
-		var today = days[time.DayOfYear];
+		var today = days[requestTime.DayOfYear];
 
 		enbuffer(() => {
 			string[] keys = {"fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"};
 
 			for (var i = 0; i < keys.Length; ++i) {
-				var time1 = time;
+				var time1 = requestTime;
 				var t = System.DateTime.Parse((string) today.GetType().GetField(keys[i])!.GetValue(today)!);
 				time1 = time1.AddHours(t.Hour - time1.Hour).AddMinutes(t.Minute - time1.Minute);
 	
@@ -197,7 +202,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 				times[i].Text = output;
 			}
 
-			setDate(time);
+			if (requestTime.DayOfMonth != time.DayOfMonth) setDate(requestTime);
 		});
 	}
 });
