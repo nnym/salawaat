@@ -71,7 +71,6 @@ var year = entrySettingRow(0, "year", 7, new(time.Year.ToString(), -1));
 var timeZone = entrySettingRow(1, "time zone", 32, new(TimeZoneInfo.Local.Id, -1));
 var latitude = entrySettingRow(2, "latitude", 20, new("", -1));
 var longitude = entrySettingRow(3, "longitude", 20, new("", -1));
-var timeFormat = settingRow(4, "12 hour time", new Switch() {Halign = Align.Start});
 
 window.ShowAll();
 top.Add(settingBox);
@@ -127,8 +126,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 					if (contents.Length >= 1) timeZone.Text = contents[0];
 					if (contents.Length >= 2) latitude.Text = contents[1];
 					if (contents.Length >= 3) longitude.Text = contents[2];
-					if (contents.Length >= 4) timeFormat.Active = contents[3] == "true";
-					if (contents.Length != 4) warning("Configuration file is corrupt.");
+					if (contents.Length != 3) warning("Configuration file is corrupt.");
 				}).Wait();
 			}
 		}
@@ -140,7 +138,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 
 		DateTime requestTime = new();
 
-		var path = tmp + '/' + string.Join('-', year.Text, timeZone.Text, latitude.Text, longitude.Text, timeFormat.Active).Replace('/', '_');
+		var path = tmp + '/' + string.Join('-', year.Text, timeZone.Text, latitude.Text, longitude.Text).Replace('/', '_');
 		debug("path " + path);
 
 		Directory.CreateDirectory(tmp);
@@ -152,7 +150,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 		}
 
 		if (days == null) {
-			var url = $"https://www.moonsighting.com/time_json.php?year={year.Text}&tz={timeZone.Text}&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time={(timeFormat.Active ? 1 : 0)}";
+			var url = $"https://www.moonsighting.com/time_json.php?year={year.Text}&tz={timeZone.Text}&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time=0";
 			debug("URL " + url);
 
 			var response = new HttpClient().Send(new() {RequestUri = new(url)});
@@ -185,7 +183,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 			return;
 		}
 
-		File.WriteAllText(config, string.Join('\n', timeZone.Text, latitude.Text, longitude.Text, timeFormat.Active));
+		File.WriteAllText(config, string.Join('\n', timeZone.Text, latitude.Text, longitude.Text));
 
 		var today = days[requestTime.DayOfYear];
 
