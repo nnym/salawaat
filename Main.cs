@@ -23,7 +23,7 @@ DateTime time = new();
 Label date = new("");
 setDate(time);
 Grid table = new() {Halign = Align.Center, RowSpacing = 8, ColumnSpacing = 8};
-Expander settingExpander = new("settings");
+Expander settingExpander = new("settings") {Halign = Align.Center};
 
 top.Add(date);
 top.Add(table);
