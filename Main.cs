@@ -56,21 +56,16 @@ for (var i = 0; i < names.Length; ++i) {
 	table.Attach(times[i] = new("--:--"), 1, i, 1, 1);
 }
 
-T settingRow<T>(int row, string name, T input) where T: Widget {
+EntryBuffer settingRow(int row, string name, int maxLength, EntryBuffer buffer) {
 	settings.Attach(new Label(name) {Halign = Align.Start}, 0, row, 1, 1);
-	settings.Attach(input, 1, row, 1, 1);
-	return input;
-}
+	settings.Attach(new Entry(buffer) {ActivatesDefault = true, MaxLength = maxLength}, 1, row, 1, 1);
 
-EntryBuffer entrySettingRow(int row, string name, int maxLength, EntryBuffer buffer) {
-	settingRow(row, name, new Entry(buffer) {ActivatesDefault = true, MaxLength = maxLength});
 	return buffer;
 }
 
-var year = entrySettingRow(0, "year", 7, new(time.Year.ToString(), -1));
-var timeZone = entrySettingRow(1, "time zone", 32, new(TimeZoneInfo.Local.Id, -1));
-var latitude = entrySettingRow(2, "latitude", 20, new("", -1));
-var longitude = entrySettingRow(3, "longitude", 20, new("", -1));
+var year = settingRow(0, "year", 7, new(time.Year.ToString(), -1));
+var latitude = settingRow(1, "latitude", 20, new("", -1));
+var longitude = settingRow(2, "longitude", 20, new("", -1));
 
 window.ShowAll();
 top.Add(settingBox);
@@ -121,24 +116,24 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 
 			if (File.Exists(config)) {
 				var contents = File.ReadAllLines(config).Where(line => line.Length > 0).ToArray();
+				if (contents is [var tz, ..] && !int.TryParse(tz, out _)) contents = contents.Skip(1).ToArray();
 
 				enbuffer(() => {
-					if (contents.Length >= 1) timeZone.Text = contents[0];
-					if (contents.Length >= 2) latitude.Text = contents[1];
-					if (contents.Length >= 3) longitude.Text = contents[2];
-					if (contents.Length != 3) warning("Configuration file is corrupt.");
+					if (contents.Length >= 1) latitude.Text = contents[0];
+					if (contents.Length >= 2) longitude.Text = contents[1];
+					if (contents.Length != 2) warning("Configuration file is corrupt.");
 				}).Wait();
 			}
 		}
 
-		if (new[]{year, timeZone, latitude, longitude}.Any(field => field.Text.Length == 0)) {
+		if (new[]{year, latitude, longitude}.Any(field => field.Text.Length == 0)) {
 			enbuffer(() => settingExpander.Expanded = true);
 			return;
 		}
 
 		DateTime requestTime = new();
 
-		var path = tmp + '/' + string.Join('-', year.Text, timeZone.Text, latitude.Text, longitude.Text).Replace('/', '_');
+		var path = tmp + '/' + string.Join('-', year.Text, latitude.Text, longitude.Text).Replace('/', '_');
 		debug("path " + path);
 
 		Directory.CreateDirectory(tmp);
@@ -150,7 +145,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 		}
 
 		if (days == null) {
-			var url = $"https://www.moonsighting.com/time_json.php?year={year.Text}&tz={timeZone.Text}&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time=0";
+			var url = $"https://www.moonsighting.com/time_json.php?year={year.Text}&tz=UTC&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time=0";
 			debug("URL " + url);
 
 			var response = new HttpClient().Send(new() {RequestUri = new(url)});
@@ -183,7 +178,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 			return;
 		}
 
-		File.WriteAllText(config, string.Join('\n', timeZone.Text, latitude.Text, longitude.Text));
+		File.WriteAllText(config, string.Join('\n', latitude.Text, longitude.Text));
 
 		var today = days[requestTime.DayOfYear];
 
@@ -194,6 +189,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 				var time1 = requestTime;
 				var t = System.DateTime.Parse((string) today.GetType().GetField(keys[i])!.GetValue(today)!);
 				time1 = time1.AddHours(t.Hour - time1.Hour).AddMinutes(t.Minute - time1.Minute);
+				if (requestTime.IsDaylightSavings) time1 = time1.AddHours(1);
 	
 				var output = time1.Format("%R");
 				if (output[0] == '0') output = output.Substring(1);
