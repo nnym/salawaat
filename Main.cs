@@ -116,7 +116,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 
 			if (File.Exists(config)) {
 				var contents = File.ReadAllLines(config).Where(line => line.Length > 0).ToArray();
-				if (contents is [var tz, ..] && !int.TryParse(tz, out _)) contents = contents.Skip(1).ToArray();
+				if (contents is [var tz, ..] && !double.TryParse(tz, out _)) contents = contents.Skip(1).ToArray();
 
 				enbuffer(() => {
 					if (contents.Length >= 1) latitude.Text = contents[0];
