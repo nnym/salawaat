@@ -101,10 +101,16 @@ void warning(string format, params object[] arguments) {
 
 void load(bool loadConfiguration = false) => Task.Run(() => {
 	lock (window) {
-		void enbuffer(Action action) => GLib.Idle.Add(GLib.Priority.DefaultIdle, () => {
-			action();
-			return false;
-		});
+		Task enbuffer(Action action) {
+			var task = new Task(action);
+
+			GLib.Idle.Add(GLib.Priority.DefaultIdle, () => {
+				task.RunSynchronously();
+				return false;
+			});
+
+			return task;
+		}
 
 		if (loadConfiguration) {
 			debug("Loading configuration.");
@@ -112,11 +118,13 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 			if (File.Exists(config)) {
 				var contents = File.ReadAllLines(config).Where(line => line.Length > 0).ToArray();
 
-				if (contents.Length >= 1) timeZone.Text = contents[0];
-				if (contents.Length >= 2) latitude.Text = contents[1];
-				if (contents.Length >= 3) longitude.Text = contents[2];
-				if (contents.Length >= 4) timeFormat.Active = contents[3] == "true";
-				if (contents.Length != 4) warning("Configuration file is corrupt.");
+				enbuffer(() => {
+					if (contents.Length >= 1) timeZone.Text = contents[0];
+					if (contents.Length >= 2) latitude.Text = contents[1];
+					if (contents.Length >= 3) longitude.Text = contents[2];
+					if (contents.Length >= 4) timeFormat.Active = contents[3] == "true";
+					if (contents.Length != 4) warning("Configuration file is corrupt.");
+				}).Wait();
 			}
 		}
 
