@@ -1,10 +1,9 @@
 ﻿using Gtk;
 using System.Text.Json;
 using Action = System.Action;
-using DateTime = GLib.DateTime;
 
 const string NAME = "salawaat";
-const bool DEBUG = true;
+const bool DEBUG = false;
 
 var config = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + '/' + NAME + ".conf";
 var tmp = System.IO.Path.GetTempPath() + NAME;
@@ -18,10 +17,10 @@ ApplicationWindow window = new(application) {Title = NAME, DefaultSize = new(320
 Box top = new(Orientation.Vertical, 20);
 window.Child = top;
 
-DateTime time = new();
+var customDate = false;
+var time = DateTime.Now;
 
 Label date = new("");
-setDate(time);
 Grid table = new() {Halign = Align.Center, RowSpacing = 8, ColumnSpacing = 8};
 Expander settingExpander = new("settings") {Halign = Align.Center};
 
@@ -45,9 +44,6 @@ Grid settings = new() {MarginTop = 8, RowSpacing = 8, ColumnSpacing = 8};
 Button refresh = new("refresh") {CanDefault = true};
 window.Default = refresh;
 
-settingBox.Add(settings);
-settingBox.Add(refresh);
-
 var times = new Label[6];
 string[] names = {"fajr", "shuruq", "dhuhr", "'asr", "maghrib", "'isha"};
 
@@ -63,38 +59,71 @@ EntryBuffer settingRow(int row, string name, int maxLength, EntryBuffer buffer) 
 	return buffer;
 }
 
-var year = settingRow(0, "year", 7, new(time.Year.ToString(), -1));
-var latitude = settingRow(1, "latitude", 20, new("", -1));
-var longitude = settingRow(2, "longitude", 20, new("", -1));
+var latitude = settingRow(0, "latitude", 20, new("", -1));
+var longitude = settingRow(1, "longitude", 20, new("", -1));
+Calendar calendar = new();
+
+calendar.DaySelected += (_, _) => markToday();
+calendar.DaySelectedDoubleClick += (_, _) => refresh.Click();
+
+settingBox.Add(settings);
+settingBox.Add(calendar);
+settingBox.Add(refresh);
 
 window.ShowAll();
 top.Add(settingBox);
 
-refresh.Clicked += (_, _) => load();
+refresh.Clicked += (_, _) => {
+	customDate = !sameDay(calendar.Date, DateTime.Now);
+	load();
+};
 
-tick();
+tick(0);
 load(true);
 
 return application.Run(application.ApplicationId, new string[0]);
 
-void setDate(DateTime t) => date.Markup = t.Format("<b>%A %c</b>");
+
+GLib.DateTime toGLib(DateTimeOffset t) => new(t.ToUnixTimeSeconds());
+string format(DateTimeOffset t, string format) => toGLib(t).Format(format);
+bool sameDay(DateTime a, DateTime b) => a.DayOfYear == b.DayOfYear && a.Year == b.Year;
+
+void setDate(DateTimeOffset t) {
+	date.Markup = format(t, $"<b>%A %{(customDate ? "x" : "c")}</b>");
+	if (!customDate) markToday();
+}
 
 void debug(string format, params object[] arguments) {
+	#pragma warning disable CS0162
 	if (DEBUG) Console.WriteLine(format, arguments);
+	#pragma warning restore CS0162
 }
 
-void warning(string format, params object[] arguments) {
-	Console.Error.WriteLine(format, arguments);
+void warning(string format, params object[] arguments) => Console.Error.WriteLine(format, arguments);
+
+#pragma warning disable 8321
+T p<T>(T o) {
+	Console.WriteLine(o);
+	return o;
+}
+#pragma warning restore 8321
+
+void markToday() {
+	calendar.ClearMarks();
+	if (calendar.Month + 1 == time.Month && calendar.Year == time.Year) calendar.MarkDay((uint) DateTime.Now.Day);
 }
 
-void tick() => GLib.Timeout.Add((uint) (1000 - time.Microsecond / 1000), () => {
-	DateTime now = new();
+void tick(uint delay) => GLib.Timeout.Add(delay, () => {
+	if (!customDate) {
+		var now = DateTime.Now;
 
-	if (now.DayOfMonth != time.DayOfMonth) {
-		if (now.Second % 15 == 0) load();
-	} else setDate(time = now);
+		if (!sameDay(now, time)) {
+			calendar.Date = now.Date;
+			if (now.Second % 15 == 0) load(false);
+		} else setDate(time = now);
+	}
 
-	tick();
+	tick((uint) (1000 - DateTime.Now.Microsecond / 1000));
 	return false;
 });
 
@@ -126,14 +155,13 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 			}
 		}
 
-		if (new[]{year, latitude, longitude}.Any(field => field.Text.Length == 0)) {
+		if (new[]{latitude, longitude}.Any(field => field.Text.Length == 0)) {
 			enbuffer(() => settingExpander.Expanded = true);
 			return;
 		}
 
-		DateTime requestTime = new();
-
-		var path = tmp + '/' + string.Join('-', year.Text, latitude.Text, longitude.Text).Replace('/', '_');
+		DateTimeOffset requestTime = calendar.Date;
+		var path = tmp + '/' + string.Join('-', requestTime.Year, latitude.Text, longitude.Text).Replace('/', '_');
 		debug("path " + path);
 
 		Directory.CreateDirectory(tmp);
@@ -145,7 +173,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 		}
 
 		if (days == null) {
-			var url = $"https://www.moonsighting.com/time_json.php?year={year.Text}&tz=UTC&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time=0";
+			var url = $"https://www.moonsighting.com/time_json.php?year={requestTime.Year}&tz=UTC&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time=0";
 			debug("URL " + url);
 
 			var response = new HttpClient().Send(new() {RequestUri = new(url)});
@@ -186,16 +214,13 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 			string[] keys = {"fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"};
 
 			for (var i = 0; i < keys.Length; ++i) {
-				var time1 = requestTime;
-				var t = System.DateTime.Parse((string) today.GetType().GetField(keys[i])!.GetValue(today)!);
-				time1 = time1.Add(time.UtcOffset).AddHours(t.Hour - time1.Hour).AddMinutes(t.Minute - time1.Minute);
-	
-				var output = time1.Format("%R");
-				if (output[0] == '0') output = output.Substring(1);
-				times[i].Text = output;
+				var t = DateTime.Parse((string) today.GetType().GetField(keys[i])!.GetValue(today)!);
+				var output = format(requestTime.Add(requestTime.Offset + t.TimeOfDay - requestTime.TimeOfDay), "%R");
+				times[i].Text = output[0] == '0' ? output.Substring(1) : output;
 			}
 
-			if (requestTime.DayOfMonth != time.DayOfMonth) setDate(requestTime);
+			if (customDate) setDate(requestTime.Date);
+			else setDate(time = DateTime.Now);
 		});
 	}
 });
