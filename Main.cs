@@ -77,7 +77,7 @@ load(true);
 
 return application.Run(application.ApplicationId, new string[0]);
 
-void setDate(DateTime t) => date.Markup = t.Format("<b>%A %x %X</b>");
+void setDate(DateTime t) => date.Markup = t.Format("<b>%A %c</b>");
 
 void debug(string format, params object[] arguments) {
 	if (DEBUG) Console.WriteLine(format, arguments);
@@ -101,7 +101,7 @@ void tick() => GLib.Timeout.Add((uint) (1000 - time.Microsecond / 1000), () => {
 void load(bool loadConfiguration = false) => Task.Run(() => {
 	lock (window) {
 		Task enbuffer(Action action) {
-			var task = new Task(action);
+			Task task = new(action);
 
 			GLib.Idle.Add(() => {
 				task.RunSynchronously();
@@ -188,8 +188,7 @@ void load(bool loadConfiguration = false) => Task.Run(() => {
 			for (var i = 0; i < keys.Length; ++i) {
 				var time1 = requestTime;
 				var t = System.DateTime.Parse((string) today.GetType().GetField(keys[i])!.GetValue(today)!);
-				time1 = time1.AddHours(t.Hour - time1.Hour).AddMinutes(t.Minute - time1.Minute);
-				if (requestTime.IsDaylightSavings) time1 = time1.AddHours(1);
+				time1 = time1.Add(time.UtcOffset).AddHours(t.Hour - time1.Hour).AddMinutes(t.Minute - time1.Minute);
 	
 				var output = time1.Format("%R");
 				if (output[0] == '0') output = output.Substring(1);
