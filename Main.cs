@@ -206,7 +206,7 @@ void resetHighlight() {
 
 void writeConfiguration() => File.WriteAllText(config, string.Join('\n', latitude.Text, longitude.Text, persist.Active));
 
-void tick(uint delay) => GLib.Timeout.Add(delay, () => {
+void tick(uint delay) => timeout(delay, () => {
 	if (customDate) resetHighlight();
 
 	var now = DateTime.Now;
@@ -217,7 +217,6 @@ void tick(uint delay) => GLib.Timeout.Add(delay, () => {
 
 	highlight();
 	tick((uint) (1000 - DateTime.Now.Microsecond / 1000));
-	return false;
 });
 
 void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run(() => {
@@ -234,7 +233,6 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 
 			if (File.Exists(config)) {
 				var contents = File.ReadAllLines(config).ToArray();
-				if (contents is [var tz, ..] && !double.TryParse(tz, out _) && tz.Length > 0) contents = contents.Skip(1).ToArray();
 
 				enbuffer(() => {
 					if (contents.Length > 0) latitude.Text = contents[0];
