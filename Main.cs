@@ -43,7 +43,11 @@ settingExpander.Activated += (_, _) => {
 };
 
 Grid settings = new() {MarginTop = 8, RowSpacing = 8, ColumnSpacing = 8};
-Button refresh = new("refresh") {CanDefault = true};
+Box buttonRow = new(Orientation.Horizontal, 8) {MarginBottom = 8};
+Button exit = new("exit") {Hexpand = true};
+Button refresh = new("refresh") {CanDefault = true, Hexpand = true};
+
+exit.Clicked += (_, _) => window.Destroy();
 window.Default = refresh;
 
 var nextPrayer = -1;
@@ -75,9 +79,12 @@ Calendar calendar = new();
 calendar.DaySelected += (_, _) => markToday();
 calendar.DaySelectedDoubleClick += (_, _) => refresh.Click();
 
+buttonRow.Add(exit);
+buttonRow.Add(refresh);
+
 settingBox.Add(settings);
 settingBox.Add(calendar);
-settingBox.Add(refresh);
+settingBox.Add(buttonRow);
 
 window.ShowAll();
 top.Add(settingBox);
