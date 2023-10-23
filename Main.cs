@@ -69,7 +69,7 @@ EntryBuffer entrySetting(int row, string name, int maxLength, EntryBuffer buffer
 
 var latitude = entrySetting(0, "latitude", 20, new("", -1));
 var longitude = entrySetting(1, "longitude", 20, new("", -1));
-Switch persist = setting(2, "system tray icon", new Switch() {Active = true, Halign = Align.Start});
+Switch persist = setting(2, "system tray icon", new Switch() {State = true, Halign = Align.Start});
 Calendar calendar = new();
 
 calendar.DaySelected += (_, _) => markToday();
