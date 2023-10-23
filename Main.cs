@@ -6,7 +6,9 @@ using Action = System.Action;
 const string NAME = "salawaat";
 const bool DEBUG = false;
 
-var config = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + '/' + NAME + ".conf";
+var configBase = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + '/' + NAME;
+var config = configBase + ".conf";
+var configJson = configBase + ".json";
 var tmp = System.IO.Path.GetTempPath() + NAME;
 
 Application application = new("x." + NAME, GLib.ApplicationFlags.None);
@@ -66,7 +68,8 @@ Entry entrySetting(int row, string name, int maxLength) => setting(row, name, ne
 
 var latitude = entrySetting(0, "latitude", 20);
 var longitude = entrySetting(1, "longitude", 20);
-Switch persist = setting(2, "system tray icon", new Switch() {State = true, Halign = Align.Start});
+var alert = setting(2, "notice period in minutes", new SpinButton(0, 999, 1) {Value = 15});
+Switch persist = setting(3, "system tray icon", new Switch() {State = true, Halign = Align.Start});
 Calendar calendar = new();
 
 calendar.DaySelected += (_, _) => markToday();
@@ -166,12 +169,11 @@ void markToday() {
 }
 
 void highlight() {
+	var current = -1;
 	var next = 0;
 
 	for (Prayer prayer; (prayer = prayers[next]).today <= time;) {
-		if ((time - prayer.today).TotalMilliseconds is >= 0 and < 1000) {
-			application.SendNotification("prayer-time", new("prayer time") {Priority = GLib.NotificationPriority.High, Body = $"{prayer.name}: {prayer.value.Text}"});
-		}
+		current = next;
 
 		if (++next == prayers.Length) {
 			next = -1;
@@ -190,6 +192,24 @@ void highlight() {
 			icon.TooltipText = $"{prayer.name}: {prayer.value.Text}";
 		}
 	}
+
+	if (current >= 0) {
+		var prayer = prayers[current];
+		var delay = (time - prayer.today).TotalMilliseconds;
+
+		if (delay is >= 0 and < 1000) {
+			application.SendNotification("prayer-time", new("prayer time") {Priority = GLib.NotificationPriority.High, Body = $"{prayer.name}: {prayer.value.Text}"});
+		}
+	}
+
+	if (next >= 0) {
+		var prayer = prayers[next];
+		var remaining = (prayer.today - time).TotalMilliseconds - alert.ValueAsInt * 60000;
+	
+		if (remaining is <= 0 and > -1000) {
+			application.SendNotification("prayer-alert", new("prayer alert") {Priority = GLib.NotificationPriority.High, Body = $"{prayer.name} in {alert.ValueAsInt} min: {prayer.value.Text}"});
+		}
+	}
 }
 
 void resetHighlight() {
@@ -200,7 +220,9 @@ void resetHighlight() {
 	}
 }
 
-void writeConfiguration() => File.WriteAllText(config, string.Join('\n', latitude.Text, longitude.Text, persist.Active));
+void writeConfiguration() {
+	using (var file = File.OpenWrite(configJson)) JsonSerializer.Serialize(file, new Configuration(latitude.Text, longitude.Text, alert.ValueAsInt, persist.Active), new JsonSerializerOptions() {WriteIndented = true});
+}
 
 void tick(uint delay) => timeout(delay, () => {
 	if (customDate) resetHighlight();
@@ -227,7 +249,16 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 		if (loadConfiguration) {
 			debug("Loading configuration.");
 
-			if (File.Exists(config)) {
+			if (File.Exists(configJson)) {
+				var c = JsonSerializer.Deserialize<Configuration>(File.ReadAllBytes(configJson));
+
+				enbuffer(() => {
+					latitude.Text = c.latitude;
+					longitude.Text = c.longitude;
+					alert.Value = c.noticePeriod;
+					icon.Visible = persist.Active = c.statusIcon;
+				}).Wait();
+			} if (File.Exists(config)) {
 				var contents = File.ReadAllLines(config).ToArray();
 
 				enbuffer(() => {
@@ -253,7 +284,7 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 
 		Directory.CreateDirectory(tmp);
 		Times[]? days = null;
-		MessageDialog? alert = null;
+		MessageDialog? error = null;
 
 		if (File.Exists(path)) {
 			days = JsonSerializer.Deserialize<Times[]>(File.OpenRead(path), new JsonSerializerOptions() {IncludeFields = true});
@@ -282,13 +313,13 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 
 				using (var file = File.OpenWrite(path)) JsonSerializer.Serialize(file, days, new JsonSerializerOptions() {IncludeFields = true});
 			} else {
-				alert = new(window, 0, MessageType.Error, ButtonsType.Close, false, "Server responded with code {0:d}. Request URL is {1}.", response.StatusCode, url);
+				error = new(window, 0, MessageType.Error, ButtonsType.Close, false, "Server responded with code {0:d}. Request URL is {1}.", response.StatusCode, url);
 			}
 		}
 
 		if (days == null) {
-			alert ??= new(window, 0, MessageType.Error, ButtonsType.Close, false, "An unknown error occurred.");
-			enbuffer(() => alert.Present());
+			error ??= new(window, 0, MessageType.Error, ButtonsType.Close, false, "An unknown error occurred.");
+			enbuffer(() => error.Present());
 
 			return;
 		}
@@ -324,6 +355,8 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 		});
 	}
 });
+
+public record struct Configuration(string latitude, string longitude, int noticePeriod, bool statusIcon) {}
 
 public record struct Prayer(string name) {
 	public DateTime today;
