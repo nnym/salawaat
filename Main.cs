@@ -26,19 +26,15 @@ Label date = new("");
 Grid table = new() {Halign = Align.Center, RowSpacing = 8, ColumnSpacing = 8};
 Expander settingExpander = new("settings") {Halign = Align.Center};
 
-top.Add(date);
-top.Add(table);
-top.Add(settingExpander);
-
 Box settingBox = new(Orientation.Vertical, 20) {Halign = Align.Center};
-var height = window.AllocatedHeight;
+Gdk.Rectangle size = new();
 
 settingExpander.Activated += (_, _) => {
 	if (settingBox.Visible = settingExpander.Expanded) {
 		settingBox.ShowAll();
-		height = window.AllocatedHeight;
+		window.GetAllocatedSize(out size, out _);
 	} else {
-		window.Resize(window.AllocatedWidth, height);
+		window.Resize(size.Width, size.Height);
 	}
 };
 
@@ -66,33 +62,27 @@ T setting<T>(int row, string name, T input) where T: Widget {
 	return input;
 }
 
-EntryBuffer entrySetting(int row, string name, int maxLength, EntryBuffer buffer) {
-	setting(row, name, new Entry(buffer) {ActivatesDefault = true, MaxLength = maxLength});
-	return buffer;
-}
+Entry entrySetting(int row, string name, int maxLength) => setting(row, name, new Entry() {ActivatesDefault = true, MaxLength = maxLength});
 
-var latitude = entrySetting(0, "latitude", 20, new("", -1));
-var longitude = entrySetting(1, "longitude", 20, new("", -1));
+var latitude = entrySetting(0, "latitude", 20);
+var longitude = entrySetting(1, "longitude", 20);
 Switch persist = setting(2, "system tray icon", new Switch() {State = true, Halign = Align.Start});
 Calendar calendar = new();
 
 calendar.DaySelected += (_, _) => markToday();
 calendar.DaySelectedDoubleClick += (_, _) => refresh.Click();
 
-buttonRow.Add(exit);
-buttonRow.Add(refresh);
-
-settingBox.Add(settings);
-settingBox.Add(calendar);
-settingBox.Add(buttonRow);
+add(buttonRow, exit, refresh);
+add(settingBox, settings, calendar, buttonRow);
+add(top, date, table, settingExpander);
 
 window.ShowAll();
 top.Add(settingBox);
 
-Menu menu = new();
 MenuItem quit = new("exit");
 quit.Activated += (_, _) => window.Destroy();
-menu.Add(quit);
+
+Menu menu = new() {Child = quit};
 menu.ShowAll();
 
 StatusIcon icon = new() {Stock = window.IconName, Title = NAME, TooltipText = NAME};
@@ -165,6 +155,10 @@ T p<T>(T o) {
 	return o;
 }
 #pragma warning restore 8321
+
+void add(Container parent, params Widget[] children) {
+	foreach (var child in children) parent.Add(child);
+}
 
 void markToday() {
 	calendar.ClearMarks();
