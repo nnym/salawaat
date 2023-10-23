@@ -15,7 +15,7 @@ application.Activated += (_, _) => {};
 
 ApplicationWindow window = new(application) {Title = NAME, IconName = Stock.About, DefaultSize = new(320, 220)};
 
-Box top = new(Orientation.Vertical, 20);
+Box top = new(Orientation.Vertical, 20) {Margin = 8};
 window.Child = top;
 
 var customDate = false;
@@ -39,9 +39,9 @@ settingExpander.Activated += (_, _) => {
 };
 
 Grid settings = new() {MarginTop = 8, RowSpacing = 8, ColumnSpacing = 8};
-Box buttonRow = new(Orientation.Horizontal, 8) {MarginBottom = 8};
-Button exit = new("exit") {Hexpand = true};
-Button refresh = new("refresh") {CanDefault = true, Hexpand = true};
+Box buttonRow = new(Orientation.Horizontal, 8);
+Button exit = new("_exit") {Hexpand = true};
+Button refresh = new("_refresh") {CanDefault = true, Hexpand = true};
 
 exit.Clicked += (_, _) => window.Destroy();
 window.Default = refresh;
@@ -79,7 +79,7 @@ add(top, date, table, settingExpander);
 window.ShowAll();
 top.Add(settingBox);
 
-MenuItem quit = new("exit");
+MenuItem quit = new("_exit");
 quit.Activated += (_, _) => window.Destroy();
 
 Menu menu = new() {Child = quit};
@@ -168,7 +168,11 @@ void markToday() {
 void highlight() {
 	var next = 0;
 
-	while (prayers[next].today <= time) {
+	for (Prayer prayer; (prayer = prayers[next]).today <= time;) {
+		if ((time - prayer.today).TotalMilliseconds is >= 0 and < 1000) {
+			application.SendNotification("prayer-time", new("prayer time") {Priority = GLib.NotificationPriority.High, Body = $"{prayer.name}: {prayer.value.Text}"});
+		}
+
 		if (++next == prayers.Length) {
 			next = -1;
 			break;
@@ -184,15 +188,6 @@ void highlight() {
 			prayer.label.Markup = $"<b>{prayer.name}</b>";
 			prayer.value.Markup = $"<b>{prayer.value.Text}</b>";
 			icon.TooltipText = $"{prayer.name}: {prayer.value.Text}";
-		}
-	}
-
-	if (nextPrayer >= 0) {
-		var prayer = prayers[nextPrayer];
-		var remaining = (prayer.today - time).TotalMilliseconds;
-
-		if (remaining >= 0 && remaining < 1000) {
-			timeout((uint) remaining, () => application.SendNotification("prayer-time", new("prayer time") {Body = $"{prayer.name}: {prayer.value.Text}"}));
 		}
 	}
 }
