@@ -139,6 +139,11 @@ void idle(Action action) => GLib.Idle.Add(() => {
 	return false;
 });
 
+void timeout(uint delay, Action action) => GLib.Timeout.Add(delay, () => {
+	action();
+	return false;
+});
+
 void debug(string format, params object[] arguments) {
 	#pragma warning disable CS0162
 	if (DEBUG) Console.WriteLine(format, arguments);
@@ -178,6 +183,15 @@ void highlight() {
 			prayer.label.Markup = $"<b>{prayer.name}</b>";
 			prayer.value.Markup = $"<b>{prayer.value.Text}</b>";
 			icon.TooltipText = $"{prayer.name}: {prayer.value.Text}";
+		}
+	}
+
+	if (nextPrayer >= 0) {
+		var prayer = prayers[nextPrayer];
+		var remaining = (prayer.today - time).TotalMilliseconds;
+
+		if (remaining >= 0 && remaining < 1000) {
+			timeout((uint) remaining, () => application.SendNotification("prayer-time", new("prayer time") {Body = $"{prayer.name}: {prayer.value.Text}"}));
 		}
 	}
 }
