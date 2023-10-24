@@ -13,9 +13,15 @@ var tmp = System.IO.Path.GetTempPath() + NAME;
 
 Application application = new("x." + NAME, GLib.ApplicationFlags.None);
 application.Register(GLib.Cancellable.Current);
-application.Activated += (_, _) => {};
+
+if (application.IsRemote) {
+	application.Activate();
+	return 0;
+}
 
 ApplicationWindow window = new(application) {Title = NAME, IconName = Stock.About, DefaultSize = new(320, 220)};
+
+application.Activated += (_, _) => window.Present();
 
 Box top = new(Orientation.Vertical, 20) {Margin = 8};
 window.Child = top;
@@ -92,7 +98,8 @@ StatusIcon icon = new() {Stock = window.IconName, Title = NAME, TooltipText = NA
 icon.PopupMenu += (_, args) => icon.PresentMenu(menu, (uint) args.Args[0], (uint) args.Args[1]);
 icon.Activate += (_, _) => {
 	if (settingExpander.Expanded) settingExpander.Activate();
-	window.Visible ^= true;
+	if (!window.IsActive) window.Present();
+	else window.Hide();
 };
 
 persist.AddNotification("active", (_, _) => {
@@ -287,7 +294,7 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 		MessageDialog? error = null;
 
 		if (File.Exists(path)) {
-			days = JsonSerializer.Deserialize<Times[]>(File.OpenRead(path), new JsonSerializerOptions() {IncludeFields = true});
+			days = JsonSerializer.Deserialize<Times[]>(File.ReadAllBytes(path), new JsonSerializerOptions() {IncludeFields = true});
 		}
 
 		if (days == null) {
