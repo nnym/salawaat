@@ -21,6 +21,8 @@ if (application.IsRemote) {
 }
 
 ApplicationWindow window = new(application) {Title = NAME, IconName = Stock.About, DefaultSize = new(320, 220)};
+var iconified = false;
+window.WindowStateEvent += (_, e) => iconified = ((Gdk.EventWindowState) e.Args[0]).NewWindowState.HasFlag(Gdk.WindowState.Iconified);
 
 var presentAction = new GLib.SimpleAction(PRESENT_ACTION, null);
 presentAction.Activated += (_, _) => window.Present();
@@ -103,7 +105,7 @@ StatusIcon icon = new() {Stock = window.IconName, Title = NAME, TooltipText = NA
 icon.PopupMenu += (_, args) => icon.PresentMenu(menu, (uint) args.Args[0], (uint) args.Args[1]);
 icon.Activate += (_, _) => {
 	if (settingExpander.Expanded) settingExpander.Activate();
-	if (!window.IsActive) window.Present();
+	if (iconified || !window.Visible) window.Present();
 	else window.Hide();
 };
 
