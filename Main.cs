@@ -348,7 +348,7 @@ void load(bool updateToday = true) => Task.Run(() => {
 
 		writeConfiguration();
 
-		var day = days[requestTime.DayOfYear];
+		var day = days[requestTime.DayOfYear - 1];
 
 		idleTask(() => {
 			string[] keys = {"fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"};
