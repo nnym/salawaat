@@ -246,7 +246,7 @@ void highlight() {
 
 	if (next >= 0) {
 		var prayer = prayers[next];
-		var remaining = (prayer.today - time).TotalMilliseconds - alert.ValueAsInt * 60000;
+		var remaining = (prayer.today - time).TotalMilliseconds - alert!.ValueAsInt * 60000;
 	
 		if (remaining is <= 0 and > -1000) {
 			application.SendNotification("prayer-alert", new("prayer alert") {
