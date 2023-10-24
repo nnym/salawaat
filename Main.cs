@@ -4,6 +4,7 @@ using System.Text.Json;
 using Action = System.Action;
 
 const string NAME = "salawaat";
+const string PRESENT_ACTION = "app.present";
 const bool DEBUG = false;
 
 var configBase = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + '/' + NAME;
@@ -15,13 +16,16 @@ Application application = new("x." + NAME, GLib.ApplicationFlags.None);
 application.Register(GLib.Cancellable.Current);
 
 if (application.IsRemote) {
-	application.Activate();
+	application.ActivateAction(PRESENT_ACTION, null);
 	return 0;
 }
 
 ApplicationWindow window = new(application) {Title = NAME, IconName = Stock.About, DefaultSize = new(320, 220)};
 
-application.Activated += (_, _) => window.Present();
+var presentAction = new GLib.SimpleAction(PRESENT_ACTION, null);
+presentAction.Activated += (_, _) => window.Present();
+application.AddAction(presentAction);
+application.Activated += (_, _) => {};
 
 Box top = new(Orientation.Vertical, 20) {Margin = 8};
 window.Child = top;
@@ -39,7 +43,7 @@ Gdk.Rectangle size = new();
 
 settingExpander.Activated += (_, _) => {
 	if (settingBox.Visible = settingExpander.Expanded) {
-		settingBox.ShowAll();
+		settingBox.Show();
 		window.GetAllocatedSize(out size, out _);
 	} else {
 		window.Resize(size.Width, size.Height);
@@ -85,7 +89,8 @@ add(buttonRow, exit, refresh);
 add(settingBox, settings, calendar, buttonRow);
 add(top, date, table, settingExpander);
 
-window.ShowAll();
+showDescendants(settingBox);
+showDescendants(window);
 top.Add(settingBox);
 
 MenuItem quit = new("_exit");
@@ -126,8 +131,31 @@ refresh.Clicked += (_, _) => {
 	load(updateToday: coordinates != (latitude.Text, longitude.Text));
 };
 
+debug("Loading configuration.");
+
+if (File.Exists(configJson)) {
+	var c = JsonSerializer.Deserialize<Configuration>(File.ReadAllBytes(configJson));
+	latitude.Text = c.latitude;
+	longitude.Text = c.longitude;
+	alert.Value = c.noticePeriod;
+	icon.Visible = persist.Active = c.statusIcon;
+} else if (File.Exists(config)) {
+	var contents = File.ReadAllLines(config).ToArray();
+
+	if (contents.Length > 0) latitude.Text = contents[0];
+	if (contents.Length > 1) longitude.Text = contents[1];
+	if (contents.Length > 2) icon.Visible = persist.Active = contents[2] != "False";
+	if (contents.Length != 3) warning("Configuration file is corrupt.");
+}
+
+if (Environment.GetCommandLineArgs().Contains("--hidden")) {
+	persist.Active = true;
+} else {
+	window.Present();
+}
+
+load();
 tick(0);
-load(true);
 
 return application.Run(application.ApplicationId, new string[0]);
 
@@ -170,6 +198,8 @@ void add(Container parent, params Widget[] children) {
 	foreach (var child in children) parent.Add(child);
 }
 
+void showDescendants(Container c) => c.Forall(w => w.ShowAll());
+
 void markToday() {
 	calendar.ClearMarks();
 	if (calendar.Month + 1 == time.Month && calendar.Year == time.Year) calendar.MarkDay((uint) DateTime.Now.Day);
@@ -205,7 +235,10 @@ void highlight() {
 		var delay = (time - prayer.today).TotalMilliseconds;
 
 		if (delay is >= 0 and < 1000) {
-			application.SendNotification("prayer-time", new("prayer time") {Priority = GLib.NotificationPriority.High, Body = $"{prayer.name}: {prayer.value.Text}"});
+			application.SendNotification("prayer-time", new("prayer time") {
+				Body = $"{prayer.name}: {prayer.value.Text}",
+				Priority = GLib.NotificationPriority.High
+			});
 		}
 	}
 
@@ -214,7 +247,10 @@ void highlight() {
 		var remaining = (prayer.today - time).TotalMilliseconds - alert.ValueAsInt * 60000;
 	
 		if (remaining is <= 0 and > -1000) {
-			application.SendNotification("prayer-alert", new("prayer alert") {Priority = GLib.NotificationPriority.High, Body = $"{prayer.name} in {alert.ValueAsInt} min: {prayer.value.Text}"});
+			application.SendNotification("prayer-alert", new("prayer alert") {
+				Body = $"{prayer.name} in {alert.ValueAsInt} min: {prayer.value.Text}",
+				Priority = GLib.NotificationPriority.High
+			});
 		}
 	}
 }
@@ -237,49 +273,26 @@ void tick(uint delay) => timeout(delay, () => {
 	var now = DateTime.Now;
 
 	if (!sameDay(now, time)) {
-		if (now.Second % 15 == 0) load(false);
+		if (now.Second % 15 == 0) load();
 	} else if (!customDate) setDate(time = now);
 
 	highlight();
 	tick((uint) (1000 - DateTime.Now.Microsecond / 1000));
 });
 
-void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run(() => {
+void load(bool updateToday = true) => Task.Run(() => {
 	lock (window) {
-		Task enbuffer(Action action) {
+		Task idleTask(Action action) {
 			Task task = new(action);
 			idle(() => task.RunSynchronously());
 
 			return task;
 		}
 
-		if (loadConfiguration) {
-			debug("Loading configuration.");
-
-			if (File.Exists(configJson)) {
-				var c = JsonSerializer.Deserialize<Configuration>(File.ReadAllBytes(configJson));
-
-				enbuffer(() => {
-					latitude.Text = c.latitude;
-					longitude.Text = c.longitude;
-					alert.Value = c.noticePeriod;
-					icon.Visible = persist.Active = c.statusIcon;
-				}).Wait();
-			} if (File.Exists(config)) {
-				var contents = File.ReadAllLines(config).ToArray();
-
-				enbuffer(() => {
-					if (contents.Length > 0) latitude.Text = contents[0];
-					if (contents.Length > 1) longitude.Text = contents[1];
-					if (contents.Length > 2) icon.Visible = persist.Active = contents[2] != "False";
-					if (contents.Length != 3) warning("Configuration file is corrupt.");
-				}).Wait();
-			}
-		}
-
 		if (latitude.Text == "" || longitude.Text == "") {
-			enbuffer(() => {
+			idleTask(() => {
 				if (!settingExpander.Expanded) settingExpander.Activate();
+				window.Show();
 			});
 
 			return;
@@ -326,7 +339,7 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 
 		if (days == null) {
 			error ??= new(window, 0, MessageType.Error, ButtonsType.Close, false, "An unknown error occurred.");
-			enbuffer(() => error.Present());
+			idleTask(() => error.Present());
 
 			return;
 		}
@@ -335,7 +348,7 @@ void load(bool loadConfiguration = false, bool updateToday = true) => Task.Run((
 
 		var day = days[requestTime.DayOfYear];
 
-		enbuffer(() => {
+		idleTask(() => {
 			string[] keys = {"fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"};
 
 			for (var i = 0; i < keys.Length; ++i) {
