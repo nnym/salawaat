@@ -62,8 +62,8 @@ fillTable(0);
 var latitude = entrySetting(0, "latitude", 20);
 var longitude = entrySetting(1, "longitude", 20);
 var alert = setting(2, "notice period in minutes", new SpinButton(0, 999, 1) {Value = 15});
-Switch persist = setting(3, "system tray icon", new Switch() {State = true, Halign = Align.Start});
-Switch relative = setting(4, "relative times", new Switch() {State = true, Halign = Align.Start});
+Switch relative = setting(3, "relative times", new Switch() {State = true, Halign = Align.Start});
+Switch persist = setting(4, "system tray icon", new Switch() {State = true, Halign = Align.Start});
 Calendar calendar = new();
 
 calendar.DaySelected += (_, _) => markToday();
@@ -145,8 +145,8 @@ if (File.Exists(config)) {
 	latitude.Text = c.latitude;
 	longitude.Text = c.longitude;
 	alert.Value = c.noticePeriod;
-	icon.Visible = persist.Active = c.statusIcon;
 	relative.State = c.relative;
+	icon.Visible = persist.Active = c.statusIcon;
 }
 
 if (Environment.GetCommandLineArgs().Contains("--hidden")) {
@@ -458,7 +458,7 @@ public record Disposable(Action dispose) : IDisposable {
 	public void Dispose() => this.dispose();
 }
 
-public record struct Configuration(string latitude, string longitude, int noticePeriod, bool statusIcon, bool relative);
+public record struct Configuration(string latitude, string longitude, int noticePeriod, bool relative, bool statusIcon);
 public record struct SourceTimes(Day[] times);
 public record struct Day(Times times);
 
