@@ -217,7 +217,7 @@ void showDescendants(Container c) => c.Forall(w => w.ShowAll());
 void fillTable(int offset) {
 	table.Forall(table.Remove);
 
-	foreach (var i in 0 .. prayers.Length) {
+	foreach (var i in .. prayers.Length) {
 		var prayer = prayers[(offset + i) % prayers.Length];
 		table.Attach(prayer.label, 0, i, 1, 1);
 		table.Attach(prayer.displayValue, 1, i, 1, 1);
@@ -361,7 +361,7 @@ Times[]? loadYear(DateTime requestTime) {
 		if (response.IsSuccessStatusCode) {
 			var json = JsonSerializer.Deserialize<SourceTimes>(response.Content.ReadAsStream(), new JsonSerializerOptions() {IncludeFields = true});
 			year = json.times.Select(day => {
-				ref var times = ref day.times;
+				var times = day.times;
 
 				foreach (var t in times.GetType().GetFields()) {
 					var value = ((string) t.GetValue(times)!).TrimEnd();
@@ -458,7 +458,9 @@ public record Disposable(Action dispose) : IDisposable {
 	public void Dispose() => this.dispose();
 }
 
-public record struct Configuration(string latitude, string longitude, int noticePeriod, bool statusIcon, bool relative) {}
+public record struct Configuration(string latitude, string longitude, int noticePeriod, bool statusIcon, bool relative);
+public record struct SourceTimes(Day[] times);
+public record struct Day(Times times);
 
 public record Prayer(string name) {
 	public DateTime today, display;
@@ -467,23 +469,8 @@ public record Prayer(string name) {
 	public Label displayValue = new("--:--");
 }
 
-public struct SourceTimes {
-	public Query? query;
-	public Day[] times;
-}
-
-public struct Query {
-	public string latitude, longitude, timeZone, method, year, both, time;
-}
-
-public struct Day {
-	public string day;
-	public Times times;
-}
-
-public unsafe record struct Times() {
+public class Times {
 	public string fajr, sunrise, dhuhr, asr, maghrib, isha;
-	public string? asr_s, asr_h;
 
 	public unsafe string get(int index) => ((string*) Unsafe.AsPointer(ref this.fajr))[index];
 }
