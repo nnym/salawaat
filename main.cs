@@ -273,19 +273,15 @@ void tick(uint delay) => timeout(delay, () => {
 		alertSent &= nextPrayer == null || time < nextPrayer.today.AddMinutes(-noticePeriod);
 	}
 
-	var next = prayers.FirstOrDefault(p => p.today > time);
+	var lines = new string[2];
+	var next = prayers.Where(p => p.today > time).MinBy(p => p.today - time);
 
 	if (next != null) {
-		if (next != nextPrayer) icon.TooltipText = $"{next.name}: {next.todayValue}";
+		var remaining = next.today - time;
+		lines[1] = $"{next.name} will be at {next.todayValue} in {remaining.Hours}:{remaining:mm}:{remaining:ss}";
 
 		if (!alertSent && time >= next.today.AddMinutes(-noticePeriod)) {
-			var remaining = next.today - time;
-
-			application.SendNotification("prayer-alert", new("prayer alert") {
-				Body = $"{next.name} will be in {remaining.Hours}:{remaining:mm}:{remaining:ss} at {next.todayValue}",
-				Priority = GLib.NotificationPriority.High
-			});
-
+			application.SendNotification("prayer-alert", new("prayer alert") {Body = lines[1], Priority = GLib.NotificationPriority.High});
 			alertSent = true;
 		}
 	} else if (nextPrayer != null) {
@@ -302,10 +298,10 @@ void tick(uint delay) => timeout(delay, () => {
 		load();
 	}
 
-	if (nextPrayer != (nextPrayer = next)) {
-		highlight();
-	}
+	if (nextPrayer != (nextPrayer = next)) highlight();
+	if (currentPrayer != null) lines[0] = $"{currentPrayer.name} since {currentPrayer.todayValue}";
 
+	icon.TooltipText = string.Join("\n", lines.Where(l => l != null));
 	tick((uint) (1000 - DateTime.Now.Millisecond));
 });
 
