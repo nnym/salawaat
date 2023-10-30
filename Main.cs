@@ -4,10 +4,11 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Action = System.Action;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
 const string NAME = "salawaat";
 const string PRESENT_ACTION = "app.present";
-const bool DEBUG = false;
+const bool DEBUG = true;
 
 var configBase = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + '/' + NAME;
 var configOld = configBase + ".conf";
@@ -22,6 +23,7 @@ if (application.IsRemote) {
 	return 0;
 }
 
+var loading = Task.CompletedTask;
 Lazy<HttpClient> http = new();
 ReaderWriterLockSlim cfgLock = new();
 
@@ -37,7 +39,7 @@ application.Activated += (_, _) => {};
 Box top = new(Orientation.Vertical, 20) {Margin = 8};
 window.Child = top;
 
-var customDate = false;
+var showToday = true;
 var time = DateTime.Now;
 var coordinates = ("", "");
 
@@ -67,30 +69,20 @@ window.Default = refresh;
 
 Prayer? currentPrayer = null, nextPrayer = null;
 Prayer[] prayers = {new("fajr"), new("shuruq"), new("dhuhr"), new("'asr"), new("maghrib"), new("'isha")};
-
-for (var i = 0; i < prayers.Length; ++i) {
-	var prayer = prayers[i];
-	table.Attach(prayer.label, 0, i, 1, 1);
-	table.Attach(prayer.value, 1, i, 1, 1);
-}
-
-T setting<T>(int row, string name, T input) where T: Widget {
-	settings.Attach(new Label(name) {Halign = Align.Start}, 0, row, 1, 1);
-	settings.Attach(input, 1, row, 1, 1);
-
-	return input;
-}
-
-Entry entrySetting(int row, string name, int maxLength) => setting(row, name, new Entry() {ActivatesDefault = true, MaxLength = maxLength});
+fillTable(0);
 
 var latitude = entrySetting(0, "latitude", 20);
 var longitude = entrySetting(1, "longitude", 20);
 var alert = setting(2, "notice period in minutes", new SpinButton(0, 999, 1) {Value = 15});
 Switch persist = setting(3, "system tray icon", new Switch() {State = true, Halign = Align.Start});
+Switch relative = setting(4, "relative times", new Switch() {State = true, Halign = Align.Start});
 Calendar calendar = new();
 
 calendar.DaySelected += (_, _) => markToday();
-calendar.DaySelectedDoubleClick += (_, _) => refresh.Click();
+calendar.DaySelectedDoubleClick += (_, _) => {
+	relative.State = false;
+	refresh.Click();
+};
 
 add(buttonRow, exit, refresh);
 add(settingBox, settings, calendar, buttonRow);
@@ -119,6 +111,12 @@ persist.AddNotification("active", (_, _) => {
 	writeConfiguration(readConfiguration() with {statusIcon = persist.Active});
 });
 
+relative.AddNotification("state", (_, _) => {
+    if (relative.State) calendar.Date = time;
+	load(setToday: relative.State);
+	writeConfiguration(readConfiguration() with {relative = relative.Active});
+});
+
 window.DeleteEvent += (_, args) => {
 	if (icon.Visible) {
 		window.Hide();
@@ -134,9 +132,10 @@ window.KeyPressEvent += (_, args) => {
 };
 
 refresh.Clicked += (_, _) => {
-	customDate = !sameDay(calendar.Date, DateTime.Now);
-	load(!customDate);
-	if (customDate && coordinates != (latitude.Text, longitude.Text)) load(true);
+	showToday = sameDay(calendar.Date, DateTime.Now);
+	if (!showToday) relative.State = false;
+	load(showToday);
+	if (!showToday && coordinates != (latitude.Text, longitude.Text)) load(true);
 };
 
 debug("Loading configuration.");
@@ -149,6 +148,7 @@ if (File.Exists(config)) {
 	longitude.Text = c.longitude;
 	alert.Value = c.noticePeriod;
 	icon.Visible = persist.Active = c.statusIcon;
+	relative.State = c.relative;
 }
 
 if (Environment.GetCommandLineArgs().Contains("--hidden")) {
@@ -175,8 +175,8 @@ string format(DateTimeOffset t, string format) => toGLib(t).Format(format);
 bool sameDay(DateTime a, DateTime b) => a.DayOfYear == b.DayOfYear && a.Year == b.Year;
 
 void setDate(DateTimeOffset t) {
-	date.Markup = format(t, $"<b>%A %x{(customDate ? "" : " %X")}</b>");
-	if (!customDate) markToday();
+	date.Markup = format(t, $"<b>%A %x{(showToday ? " %X" : "")}</b>");
+	if (showToday) markToday();
 }
 
 void idle(Action action) => GLib.Idle.Add(() => {
@@ -188,6 +188,12 @@ uint timeout(uint delay, Action action) => GLib.Timeout.Add(delay, () => {
 	action();
 	return false;
 });
+
+void idleTask(Action action) {
+	Task task = new(action);
+	idle(() => task.RunSynchronously());
+	task.Wait();
+}
 
 void debug(string format, params object[] arguments) {
 	#pragma warning disable CS0162
@@ -210,6 +216,25 @@ void add(Container parent, params Widget[] children) {
 
 void showDescendants(Container c) => c.Forall(w => w.ShowAll());
 
+void fillTable(int offset) {
+	table.Forall(table.Remove);
+
+	foreach (var i in Enumerable.Range(0, prayers.Length)) {
+		var prayer = prayers[(offset + i) % prayers.Length];
+		table.Attach(prayer.label, 0, i, 1, 1);
+		table.Attach(prayer.displayValue, 1, i, 1, 1);
+	}
+}
+
+T setting<T>(int row, string name, T input) where T: Widget {
+	settings.Attach(new Label(name) {Halign = Align.Start}, 0, row, 1, 1);
+	settings.Attach(input, 1, row, 1, 1);
+
+	return input;
+}
+
+Entry entrySetting(int row, string name, int maxLength) => setting(row, name, new Entry() {ActivatesDefault = true, MaxLength = maxLength});
+
 void markToday() {
 	calendar.ClearMarks();
 	if (calendar.Month + 1 == time.Month && calendar.Year == time.Year) calendar.MarkDay((uint) DateTime.Now.Day);
@@ -221,17 +246,16 @@ Disposable useLock(Action enter, Action exit) {
 }
 
 Configuration readConfiguration() {
-	using (useLock(cfgLock.EnterReadLock, cfgLock.ExitReadLock)) return JsonSerializer.Deserialize<Configuration>(File.ReadAllBytes(config));
+	using var _ = useLock(cfgLock.EnterReadLock, cfgLock.ExitReadLock);
+	return JsonSerializer.Deserialize<Configuration>(File.ReadAllBytes(config));
 }
 
 void writeConfiguration(Configuration? configuration = null) {
-	configuration ??= new Configuration(latitude.Text, longitude.Text, alert.ValueAsInt, persist.Active);
+	configuration ??= new Configuration(latitude.Text, longitude.Text, alert.ValueAsInt, persist.Active, relative.Active);
 
-	using (useLock(cfgLock.EnterWriteLock, cfgLock.ExitWriteLock)) {
-		using (var file = File.Open(config, FileMode.OpenOrCreate | FileMode.Truncate, FileAccess.Write, FileShare.ReadWrite)) {
-			JsonSerializer.Serialize(file, configuration, new JsonSerializerOptions() {WriteIndented = true});
-		}
-	}
+	using var _ = useLock(cfgLock.EnterWriteLock, cfgLock.ExitWriteLock);
+	using var file = File.Open(config, FileMode.OpenOrCreate | FileMode.Truncate, FileAccess.Write, FileShare.ReadWrite);
+	JsonSerializer.Serialize(file, configuration, new JsonSerializerOptions() {WriteIndented = true});
 }
 
 void tick(uint delay) => timeout(delay, () => {
@@ -239,12 +263,12 @@ void tick(uint delay) => timeout(delay, () => {
 
 	if (sameDay(now, time)) {
 		time = now;
-		if (!customDate) setDate(now);
+		if (showToday) setDate(now);
 	} else {
-		if (now.Second % 15 == 0) load(newDay: true);
+		if (now.Second % 15 == 0) load(setToday: true);
 	}
 
-	customDate &= !sameDay(time, calendar.Date);
+	showToday |= sameDay(time, calendar.Date);
 
 	if (noticePeriod != (noticePeriod = alert.ValueAsInt)) {
 		save();
@@ -277,6 +301,7 @@ void tick(uint delay) => timeout(delay, () => {
 		});
 
 		alertSent = false;
+		load();
 	}
 
 	if (nextPrayer != (nextPrayer = next)) {
@@ -289,19 +314,18 @@ void tick(uint delay) => timeout(delay, () => {
 void unhighlight() {
 	if (currentPrayer != null) {
 		currentPrayer.label.Text = currentPrayer.name;
-		currentPrayer.value.Text = currentPrayer.value.Text;
+		currentPrayer.displayValue.Text = currentPrayer.displayValue.Text;
 		currentPrayer = null;
 	}
 }
 
 void highlight() {
-	var current = prayers.LastOrDefault(p => p.today <= time);
 	unhighlight();
 
-	if (!customDate && current != null) {
+	if (showToday && prayers.LastOrDefault(p => time >= p.display) is Prayer current) {
 		currentPrayer = current;
 		current.label.Markup = $"<b>{current.name}</b>";
-		current.value.Markup = $"<b>{current.value.Text}</b>";
+		current.displayValue.Markup = $"<b>{current.displayValue.Text}</b>";
 	}
 }
 
@@ -310,120 +334,143 @@ void save(object? sender = null, EventArgs? args = null) {
 	else writeConfiguration();
 }
 
-void load(bool updateToday = true, bool newDay = false) => Task.Run(() => {
-	lock (window) {
-		void idleTask(Action action) {
-			Task task = new(action);
-			idle(() => task.RunSynchronously());
-			task.Wait();
-		}
+Times[]? loadYear(DateTime requestTime) {
+	debug("Loading year {0}.", requestTime.Year);
 
-		if (latitude.Text == "" || longitude.Text == "") {
-			idleTask(() => {
-				if (!settingExpander.Expanded) settingExpander.Activate();
-				window.Show();
-			});
-
-			return;
-		}
-
-		DateTime requestTime = newDay ? DateTime.Now : calendar.Date;
-		var path = tmp + '/' + string.Join('-', requestTime.Year, latitude.Text, longitude.Text).Replace('/', '_');
-		debug("path " + path);
-
-		Directory.CreateDirectory(tmp);
-		Times[]? days = null;
-		MessageDialog? error = null;
-
-		if (File.Exists(path)) {
-			days = JsonSerializer.Deserialize<Times[]>(File.ReadAllBytes(path), new JsonSerializerOptions() {IncludeFields = true});
-		}
-
-		if (days == null) {
-			var url = $"https://www.moonsighting.com/time_json.php?year={requestTime.Year}&tz=UTC&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time=0";
-			debug("URL " + url);
-
-			var response = http.Value.Send(new() {RequestUri = new(url)});
-			debug("HTTP {0:d}", response.StatusCode);
-
-			if (response.IsSuccessStatusCode) {
-				var json = JsonSerializer.Deserialize<SourceTimes>(response.Content.ReadAsStream(), new JsonSerializerOptions() {IncludeFields = true});
-				days = json.times.Select(day => {
-					object times = day.times;
-
-					foreach (var t in times.GetType().GetFields()) {
-						var value = ((string) t.GetValue(times)!).TrimEnd();
-						if (value.StartsWith('0')) value = value.Substring(1);
-						t.SetValue(times, value);
-					}
-
-					return (Times) times;
-				}).ToArray();
-
-				using (var file = File.OpenWrite(path)) JsonSerializer.Serialize(file, days, new JsonSerializerOptions() {IncludeFields = true});
-			} else {
-				error = new(window, 0, MessageType.Error, ButtonsType.Close, false, "Server responded with code {0:d}. Request URL is {1}.", response.StatusCode, url);
-			}
-		}
-
-		if (days == null) {
-			error ??= new(window, 0, MessageType.Error, ButtonsType.Close, false, "An unknown error occurred.");
-			idleTask(() => error.Present());
-
-			return;
-		}
-
-		writeConfiguration();
-		customDate &= !newDay;
-
-		var day = days[requestTime.DayOfYear - 1];
-
+	if (latitude.Text == "" || longitude.Text == "") {
 		idleTask(() => {
-			for (var i = 0; i < prayers.Length; ++i) {
-				ref var prayer = ref prayers[i];
-				var time = requestTime.Date + DateTime.Parse(day.get(i)).TimeOfDay + TimeZoneInfo.Local.GetUtcOffset(requestTime);
-				var output = Regex.Replace(format(time, "%R"), "^0", "");
-
-				if (updateToday) {
-					prayer.today = time;
-					prayer.todayValue = output;
-				}
-				
-				if (!customDate || !updateToday) {
-					prayer.target = time;
-					prayer.value.Text = output;
-				}
-			}
-
-			if (customDate) {
-				setDate(requestTime);
-				unhighlight();
-			} else {
-				setDate(time = DateTime.Now);
-			}
-
-			calendar.Date = requestTime;
-			coordinates = (latitude.Text, longitude.Text);
-
-			highlight();
+			if (!settingExpander.Expanded) settingExpander.Activate();
+			window.Show();
 		});
+
+		return null;
 	}
+
+	var path = tmp + '/' + string.Join('-', requestTime.Year, latitude.Text, longitude.Text).Replace('/', '_');
+	debug("path " + path);
+
+	Directory.CreateDirectory(tmp);
+	Times[]? year = null;
+	MessageDialog? error = null;
+
+	if (File.Exists(path)) {
+		year = JsonSerializer.Deserialize<Times[]>(File.ReadAllBytes(path), new JsonSerializerOptions() {IncludeFields = true});
+	}
+
+	if (year == null) {
+		var url = $"https://www.moonsighting.com/time_json.php?year={requestTime.Year}&tz=UTC&lat={latitude.Text}&lon={longitude.Text}&method=2&both=0&time=0";
+		debug("URL " + url);
+
+		var response = http.Value.Send(new(HttpMethod.Get, url));
+		debug("HTTP {0:d}", response.StatusCode);
+
+		if (response.IsSuccessStatusCode) {
+			var json = JsonSerializer.Deserialize<SourceTimes>(response.Content.ReadAsStream(), new JsonSerializerOptions() {IncludeFields = true});
+			year = json.times.Select(day => {
+				ref var times = ref day.times;
+
+				foreach (var t in times.GetType().GetFields()) {
+					var value = ((string) t.GetValue(times)!).TrimEnd();
+					if (value.StartsWith('0')) value = value.Substring(1);
+					t.SetValue(times, value);
+				}
+
+				return times;
+			}).ToArray();
+
+			using var file = File.OpenWrite(path);
+			JsonSerializer.Serialize(file, year, new JsonSerializerOptions() {IncludeFields = true});
+		} else {
+			error = new(window, 0, MessageType.Error, ButtonsType.Close, false, "Server responded with code {0:d}. Request URL is {1}.", response.StatusCode, url);
+		}
+	}
+
+	if (year == null) {
+		error ??= new(window, 0, MessageType.Error, ButtonsType.Close, false, "An unknown error occurred.");
+		idleTask(() => error.Present());
+
+		return null;
+	}
+
+    return year;
+}
+
+void load(bool today = true, bool setToday = false) => loading = loading.ContinueWith(_ => {
+	var requestTime = setToday ? DateTime.Now : calendar.Date;
+
+	if (loadYear(requestTime) is not Times[] year) return;
+
+	var day = year[requestTime.DayOfYear - 1];
+	writeConfiguration();
+	showToday |= setToday;
+
+	idleTask(() => {
+		DateTime parseTime(DateTime date, string time) => (date = date.Date + DateTime.Parse(time).TimeOfDay) + TimeZoneInfo.Local.GetUtcOffset(date);
+
+		void setDay(bool wrap, DateTime date, Times times, int i) {
+			ref var prayer = ref prayers[i];
+			var time = parseTime(date, times.get(i));
+			var output = Regex.Replace(format(time, "%R"), "^0", "");
+
+			if (today) {
+				prayer.today = time;
+				prayer.todayValue = output;
+			}
+			
+			if (!today || showToday && (!wrap || relative.State)) {
+				prayer.display = time;
+				prayer.displayValue.Text = output;
+			}
+		}
+
+		bool wrap(int direction, int time) {
+			var day = requestTime.AddDays(direction);
+			var y = year;
+
+			if (day.Year != requestTime.Year) {
+				if (loadYear(day) is Times[] y1) y = y1;
+				else {
+					relative.State = false;
+					return false;
+				}
+			}
+
+			setDay(true, day, y[day.DayOfYear - 1], time);
+			return true;
+		}
+
+		for (var i = 0; i < prayers.Length; ++i) setDay(false, requestTime, day, i);
+
+		if (today) {
+			var offset = Enumerable.Range(0, prayers.Length).Where(i => DateTime.Now >= prayers[i].today).LastOrDefault();
+			var ok = true;
+
+			if (relative.State) foreach (var i in Enumerable.Range(0, offset)) ok &= wrap(1, i);
+			if (DateTime.Now < prayers[0].today) ok &= wrap(-1, offset = prayers.Length - 1);
+			if (ok) fillTable(relative.State ? offset : 0);
+			else new MessageDialog(window, 0, MessageType.Error, ButtonsType.Close, true, "An unknown error occurred.");
+		}
+		
+		coordinates = (latitude.Text, longitude.Text);
+		nextPrayer = null;
+		setDate(showToday ? time = DateTime.Now : requestTime);
+		highlight();
+	});
 }).ContinueWith(task => {
 	if (task.IsFaulted) Console.Error.WriteLine(task.Exception);
 });
 
 public record Disposable(Action dispose) : IDisposable {
-    public void Dispose() => this.dispose();
+	public void Dispose() => this.dispose();
 }
 
-public record struct Configuration(string latitude, string longitude, int noticePeriod, bool statusIcon) {}
+public record struct Configuration(string latitude, string longitude, int noticePeriod, bool statusIcon, bool relative) {}
 
 public record Prayer(string name) {
-	public DateTime today;
-	public DateTime target;
+	public DateTime today, display;
 	public string todayValue;
 	public Label label = new(name) {Halign = Align.Start};
-	public Label value = new("--:--");
+	public Label displayValue = new("--:--");
 }
 
 public struct SourceTimes {
