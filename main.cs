@@ -4,7 +4,6 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Action = System.Action;
-using Stopwatch = System.Diagnostics.Stopwatch;
 
 const string NAME = "salawaat";
 const string PRESENT_ACTION = "app.present";
@@ -48,17 +47,6 @@ Grid table = new() {Halign = Align.Center, RowSpacing = 8, ColumnSpacing = 8};
 Expander settingExpander = new("settings") {Halign = Align.Center};
 
 Box settingBox = new(Orientation.Vertical, 20) {Halign = Align.Center};
-Gdk.Rectangle size = new();
-
-settingExpander.Activated += (_, _) => {
-	if (settingBox.Visible = settingExpander.Expanded) {
-		settingBox.Show();
-		window.GetAllocatedSize(out size, out _);
-	} else {
-		window.Resize(size.Width, size.Height);
-	}
-};
-
 Grid settings = new() {MarginTop = 8, RowSpacing = 8, ColumnSpacing = 8};
 Box buttonRow = new(Orientation.Horizontal, 8);
 Button exit = new("_exit") {Hexpand = true};
@@ -106,17 +94,6 @@ icon.Activate += (_, _) => {
 	else window.Hide();
 };
 
-persist.AddNotification("active", (_, _) => {
-	icon.Visible = persist.Active;
-	writeConfiguration(readConfiguration() with {statusIcon = persist.Active});
-});
-
-relative.AddNotification("state", (_, _) => {
-    if (relative.State) calendar.Date = time;
-	load(setToday: relative.State);
-	writeConfiguration(readConfiguration() with {relative = relative.Active});
-});
-
 window.DeleteEvent += (_, args) => {
 	if (icon.Visible) {
 		window.Hide();
@@ -130,6 +107,28 @@ window.KeyPressEvent += (_, args) => {
 		else window.Close();
 	}
 };
+
+Gdk.Rectangle size = new();
+
+settingExpander.Activated += (_, _) => {
+	if (settingBox.Visible = settingExpander.Expanded) {
+		settingBox.Show();
+		window.GetAllocatedSize(out size, out _);
+	} else {
+		window.Resize(size.Width, size.Height);
+	}
+};
+
+persist.AddNotification("active", (_, _) => {
+	icon.Visible = persist.Active;
+	writeConfiguration(readConfiguration() with {statusIcon = persist.Active});
+});
+
+relative.AddNotification("state", (_, _) => {
+    if (relative.State) calendar.Date = time;
+	load(setToday: relative.State);
+	writeConfiguration(readConfiguration() with {relative = relative.Active});
+});
 
 refresh.Clicked += (_, _) => {
 	showToday = sameDay(calendar.Date, DateTime.Now);
@@ -219,7 +218,7 @@ void showDescendants(Container c) => c.Forall(w => w.ShowAll());
 void fillTable(int offset) {
 	table.Forall(table.Remove);
 
-	foreach (var i in Enumerable.Range(0, prayers.Length)) {
+	foreach (var i in 0 .. prayers.Length) {
 		var prayer = prayers[(offset + i) % prayers.Length];
 		table.Attach(prayer.label, 0, i, 1, 1);
 		table.Attach(prayer.displayValue, 1, i, 1, 1);
@@ -439,16 +438,15 @@ void load(bool today = true, bool setToday = false) => loading = loading.Continu
 			return true;
 		}
 
-		for (var i = 0; i < prayers.Length; ++i) setDay(false, requestTime, day, i);
+		foreach (var i in .. prayers.Length) setDay(false, requestTime, day, i);
 
 		if (today) {
 			var offset = Enumerable.Range(0, prayers.Length).Where(i => DateTime.Now >= prayers[i].today).LastOrDefault();
 			var ok = true;
 
-			if (relative.State) foreach (var i in Enumerable.Range(0, offset)) ok &= wrap(1, i);
+			if (relative.State) foreach (var i in .. offset) ok &= wrap(1, i);
 			if (DateTime.Now < prayers[0].today) ok &= wrap(-1, offset = prayers.Length - 1);
 			if (ok) fillTable(relative.State ? offset : 0);
-			else new MessageDialog(window, 0, MessageType.Error, ButtonsType.Close, true, "An unknown error occurred.");
 		}
 		
 		coordinates = (latitude.Text, longitude.Text);
