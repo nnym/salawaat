@@ -125,7 +125,6 @@ persist.AddNotification("active", (_, _) => {
 });
 
 relative.AddNotification("state", (_, _) => {
-    if (relative.State) calendar.Date = time;
 	load(setToday: relative.State);
 	writeConfiguration(readConfiguration() with {relative = relative.Active});
 });
@@ -445,12 +444,13 @@ void load(bool today = true, bool setToday = false) => loading = loading.Continu
 			var ok = true;
 
 			if (relative.State) foreach (var i in .. offset) ok &= wrap(1, i);
-			if (DateTime.Now < prayers[0].today) ok &= wrap(-1, offset = prayers.Length - 1);
+			if (offset == 0 && DateTime.Now < prayers[0].today) ok &= wrap(-1, offset = prayers.Length - 1);
 			if (ok) fillTable(relative.State ? offset : 0);
 		}
 		
 		coordinates = (latitude.Text, longitude.Text);
 		nextPrayer = null;
+		calendar.Date = requestTime;
 		setDate(showToday ? time = DateTime.Now : requestTime);
 		highlight();
 	});
