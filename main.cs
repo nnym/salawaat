@@ -286,6 +286,7 @@ void tick(uint delay) => timeout(delay, () => {
 		lines[1] = $"{next.name} will be at {next.todayValue} in {remaining.Hours}:{remaining:mm}:{remaining:ss}";
 
 		if (!alertSent && time >= next.today.AddMinutes(-noticePeriod)) {
+			debug("Sending advance notification.");
 			notifMan.ShowNotification(new() {Title = "prayer alert", Body = lines[1]}, time + notifDuration);
 			alertSent = true;
 		}
@@ -294,6 +295,7 @@ void tick(uint delay) => timeout(delay, () => {
 	}
 
 	if (next != nextPrayer && nextPrayer != null) {
+		debug("Sending arrival notification.");
 		notifMan.ShowNotification(new() {Title = "prayer time", Body = $"{nextPrayer.name}: {nextPrayer.todayValue}"}, time + notifDuration);
 		alertSent = false;
 		load();
