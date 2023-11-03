@@ -27,6 +27,7 @@ INotificationManager? notifMan = RuntimeInformation.IsOSPlatform(OSPlatform.Linu
 	: null;
 
 if (notifMan != null) await notifMan.Initialize();
+debug("notifMan = {0}", notifMan);
 
 var notifDuration = TimeSpan.FromSeconds(30);
 var loading = Task.CompletedTask;
@@ -198,9 +199,12 @@ void idleTask(Action action) {
 	task.Wait();
 }
 
-void debug(string format, params object[] arguments) {
+void debug(object? format, params object?[] arguments) {
 	#pragma warning disable CS0162
-	if (DEBUG) Console.WriteLine(format, arguments);
+	if (DEBUG) {
+		if (format is string s) Console.WriteLine(s, arguments);
+		else Console.WriteLine(string.Join(" ", [format, ..arguments]));
+	}
 	#pragma warning restore CS0162
 }
 
@@ -286,8 +290,8 @@ void tick(uint delay) => timeout(delay, () => {
 		lines[1] = $"{next.name} will be at {next.todayValue} in {remaining.Hours}:{remaining:mm}:{remaining:ss}";
 
 		if (!alertSent && time >= next.today.AddMinutes(-noticePeriod)) {
-			debug("Sending advance notification.");
-			notifMan.ShowNotification(new() {Title = "prayer alert", Body = lines[1]}, time + notifDuration);
+			debug("advance notification");
+			if (notifMan != null) notifMan.ShowNotification(new() {Title = "prayer alert", Body = lines[1]}, time + notifDuration);
 			alertSent = true;
 		}
 	} else if (nextPrayer != null) {
@@ -295,8 +299,8 @@ void tick(uint delay) => timeout(delay, () => {
 	}
 
 	if (next != nextPrayer && nextPrayer != null) {
-		debug("Sending arrival notification.");
-		notifMan.ShowNotification(new() {Title = "prayer time", Body = $"{nextPrayer.name}: {nextPrayer.todayValue}"}, time + notifDuration);
+		debug("arrival notification");
+		if (notifMan != null) notifMan.ShowNotification(new() {Title = "prayer time", Body = $"{nextPrayer.name}: {nextPrayer.todayValue}"}, time + notifDuration);
 		alertSent = false;
 		load();
 	}
