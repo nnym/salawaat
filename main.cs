@@ -1,20 +1,20 @@
 ﻿#pragma warning disable 612, 8500
+using DesktopNotifications;
+using DesktopNotifications.FreeDesktop;
+using DesktopNotifications.Windows;
+using Gdk;
 using Gtk;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Action = System.Action;
+using static Const;
 
-const string NAME = "salawaat";
-const string PRESENT_ACTION = "app.present";
-const bool DEBUG = true;
-
-var configBase = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + '/' + NAME;
-var configOld = configBase + ".conf";
-var config = configBase + ".json";
+var config = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + $"/{NAME}.json";
 var tmp = System.IO.Path.GetTempPath() + NAME;
 
-Application application = new("x." + NAME, GLib.ApplicationFlags.None);
+Application application = new(ID, GLib.ApplicationFlags.None);
 application.Register(GLib.Cancellable.Current);
 
 if (application.IsRemote) {
@@ -22,18 +22,25 @@ if (application.IsRemote) {
 	return 0;
 }
 
+INotificationManager? notifMan = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new FreeDesktopNotificationManager()
+	: RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? new WindowsNotificationManager()
+	: null;
+
+if (notifMan != null) await notifMan.Initialize();
+
+var notifDuration = TimeSpan.FromSeconds(30);
 var loading = Task.CompletedTask;
 Lazy<HttpClient> http = new();
 ReaderWriterLockSlim cfgLock = new();
 
 ApplicationWindow window = new(application) {Title = NAME, IconName = Stock.About, DefaultSize = new(320, 220)};
 var iconified = false;
-window.WindowStateEvent += (_, e) => iconified = ((Gdk.EventWindowState) e.Args[0]).NewWindowState.HasFlag(Gdk.WindowState.Iconified);
+window.WindowStateEvent += (_, e) => iconified = ((EventWindowState) e.Args[0]).NewWindowState.HasFlag(WindowState.Iconified);
 
 var presentAction = new GLib.SimpleAction(PRESENT_ACTION, null);
 presentAction.Activated += (_, _) => window.Present();
 application.AddAction(presentAction);
-application.Activated += (_, _) => {};
+application.Activated += (_, _) => debug("activated");
 
 Box top = new(Orientation.Vertical, 20) {Margin = 8};
 window.Child = top;
@@ -89,7 +96,6 @@ menu.ShowAll();
 StatusIcon icon = new() {Stock = window.IconName, Title = NAME, TooltipText = NAME};
 icon.PopupMenu += (_, args) => icon.PresentMenu(menu, (uint) args.Args[0], (uint) args.Args[1]);
 icon.Activate += (_, _) => {
-	if (settingExpander.Expanded) settingExpander.Activate();
 	if (iconified || !window.Visible) window.Present();
 	else window.Hide();
 };
@@ -97,18 +103,19 @@ icon.Activate += (_, _) => {
 window.DeleteEvent += (_, args) => {
 	if (icon.Visible) {
 		window.Hide();
+		if (settingExpander.Expanded) settingExpander.Activate();
 		args.RetVal = true;
 	}
 };
 
 window.KeyPressEvent += (_, args) => {
-	if (((Gdk.EventKey) args.Args[0]).Key == Gdk.Key.Escape) {
+	if (args.Args[0] is EventKey {Key: Gdk.Key.Escape}) {
 		if (settingExpander.Expanded) settingExpander.Activate();
 		else window.Close();
 	}
 };
 
-Gdk.Rectangle size = new();
+Rectangle size = new();
 
 settingExpander.Activated += (_, _) => {
 	if (settingBox.Visible = settingExpander.Expanded) {
@@ -138,8 +145,6 @@ refresh.Clicked += (_, _) => {
 
 debug("Loading configuration.");
 
-if (File.Exists(configOld)) File.Delete(configOld);
-
 if (File.Exists(config)) {
 	var c = readConfiguration();
 	latitude.Text = c.latitude;
@@ -165,7 +170,7 @@ AppDomain.CurrentDomain.ProcessExit += save;
 AppDomain.CurrentDomain.UnhandledException += save;
 Console.CancelKeyPress += save;
 
-return application.Run(application.ApplicationId, new string[0]);
+return application.Run(application.ApplicationId, [..Environment.GetCommandLineArgs()[1..]]);
 
 
 GLib.DateTime toGLib(DateTimeOffset t) => new(t.ToUnixTimeSeconds());
@@ -217,7 +222,7 @@ void showDescendants(Container c) => c.Forall(w => w.ShowAll());
 void fillTable(int offset) {
 	table.Forall(table.Remove);
 
-	foreach (var i in .. prayers.Length) {
+	foreach (var i in ..prayers.Length) {
 		var prayer = prayers[(offset + i) % prayers.Length];
 		table.Attach(prayer.label, 0, i, 1, 1);
 		table.Attach(prayer.displayValue, 1, i, 1, 1);
@@ -281,7 +286,7 @@ void tick(uint delay) => timeout(delay, () => {
 		lines[1] = $"{next.name} will be at {next.todayValue} in {remaining.Hours}:{remaining:mm}:{remaining:ss}";
 
 		if (!alertSent && time >= next.today.AddMinutes(-noticePeriod)) {
-			application.SendNotification("prayer-alert", new("prayer alert") {Body = lines[1], Priority = GLib.NotificationPriority.High});
+			notifMan.ShowNotification(new() {Title = "prayer alert", Body = lines[1]}, time + notifDuration);
 			alertSent = true;
 		}
 	} else if (nextPrayer != null) {
@@ -289,11 +294,7 @@ void tick(uint delay) => timeout(delay, () => {
 	}
 
 	if (next != nextPrayer && nextPrayer != null) {
-		application.SendNotification("prayer-time", new("prayer time") {
-			Body = $"{nextPrayer.name}: {nextPrayer.todayValue}",
-			Priority = GLib.NotificationPriority.High
-		});
-
+		notifMan.ShowNotification(new() {Title = "prayer time", Body = $"{nextPrayer.name}: {nextPrayer.todayValue}"}, time + notifDuration);
 		alertSent = false;
 		load();
 	}
@@ -433,13 +434,13 @@ void load(bool today = true, bool setToday = false) => loading = loading.Continu
 			return true;
 		}
 
-		foreach (var i in .. prayers.Length) setDay(false, requestTime, day, i);
+		foreach (var i in ..prayers.Length) setDay(false, requestTime, day, i);
 
 		if (today) {
 			var offset = Enumerable.Range(0, prayers.Length).Where(i => DateTime.Now >= prayers[i].today).LastOrDefault();
 			var ok = true;
 
-			if (relative.State) foreach (var i in .. offset) ok &= wrap(1, i);
+			if (relative.State) foreach (var i in ..offset) ok &= wrap(1, i);
 			if (offset == 0 && DateTime.Now < prayers[0].today) ok &= wrap(-1, offset = prayers.Length - 1);
 			if (ok) fillTable(relative.State ? offset : 0);
 		}
@@ -453,6 +454,15 @@ void load(bool today = true, bool setToday = false) => loading = loading.Continu
 }).ContinueWith(task => {
 	if (task.IsFaulted) Console.Error.WriteLine(task.Exception);
 });
+
+class Const {
+	public const bool DEBUG = true;
+	public const string
+		NAME = "salawaat",
+		ID = "x." + NAME,
+		NOTIFICATIONS = "org.freedesktop.Notifications",
+		PRESENT_ACTION = "app.present";
+}
 
 public record Disposable(Action dispose) : IDisposable {
 	public void Dispose() => this.dispose();

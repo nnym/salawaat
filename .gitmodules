@@ -1,0 +1,3 @@
+[submodule "DesktopNotifications"]
+	path = DesktopNotifications
+	url = https://github.com/nnym/DesktopNotifications
