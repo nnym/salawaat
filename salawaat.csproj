@@ -8,6 +8,7 @@
     <NoWarn>CS618, CS8509, CS8618</NoWarn>
     <LangVersion>preview</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(OS) == Windows_NT">
