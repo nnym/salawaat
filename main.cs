@@ -34,7 +34,7 @@ var loading = Task.CompletedTask;
 Lazy<HttpClient> http = new();
 ReaderWriterLockSlim cfgLock = new();
 
-ApplicationWindow window = new(application) {Title = NAME, IconName = Stock.About, DefaultSize = new(320, 220)};
+ApplicationWindow window = new(application) {Title = NAME, Icon = Pixbuf.LoadFromResource("salawaat.icon.pixel.png"), DefaultSize = new(320, 220)};
 var iconified = false;
 window.WindowStateEvent += (_, e) => iconified = ((EventWindowState) e.Args[0]).NewWindowState.HasFlag(WindowState.Iconified);
 
@@ -94,7 +94,7 @@ quit.Activated += (_, _) => window.Destroy();
 Menu menu = new() {Child = quit};
 menu.ShowAll();
 
-StatusIcon icon = new() {Stock = window.IconName, Title = NAME, TooltipText = NAME};
+StatusIcon icon = new() {Icon = window.Icon, Title = NAME, TooltipText = NAME};
 icon.PopupMenu += (_, args) => icon.PresentMenu(menu, (uint) args.Args[0], (uint) args.Args[1]);
 icon.Activate += (_, _) => {
 	if (iconified || !window.Visible) window.Present();
@@ -203,7 +203,7 @@ void debug(object? format, params object?[] arguments) {
 	#pragma warning disable CS0162
 	if (DEBUG) {
 		if (format is string s) Console.WriteLine(s, arguments);
-		else Console.WriteLine(string.Join(" ", [format, ..arguments]));
+		else Console.WriteLine(string.Join(" ", format is object?[] os ? [..os, ..arguments] : [format, ..arguments]));
 	}
 	#pragma warning restore CS0162
 }

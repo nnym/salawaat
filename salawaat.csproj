@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
+    <ApplicationIcon>icon/pixel.ico</ApplicationIcon>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -17,6 +18,11 @@
 
   <ItemGroup>
     <Compile Include="*.cs" Exclude="DesktopNotifications/**/*.cs"/>
+
+    <EmbeddedResource Include="icon/pixel.png">
+      <Type>Non-Resx</Type>
+    </EmbeddedResource>
+
     <ProjectReference Include="DesktopNotifications/DesktopNotifications/DesktopNotifications.csproj"/>
     <ProjectReference Include="DesktopNotifications/DesktopNotifications.FreeDesktop/DesktopNotifications.FreeDesktop.csproj"/>
     <ProjectReference Include="DesktopNotifications/DesktopNotifications.Windows/DesktopNotifications.Windows.csproj"/>
