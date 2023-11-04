@@ -19,10 +19,7 @@
 
   <ItemGroup>
     <Compile Include="*.cs" Exclude="DesktopNotifications/**/*.cs"/>
-
-    <EmbeddedResource Include="icon/pixel.png">
-      <Type>Non-Resx</Type>
-    </EmbeddedResource>
+    <EmbeddedResource Include="icon/pixel.png"/>
 
     <ProjectReference Include="DesktopNotifications/DesktopNotifications/DesktopNotifications.csproj"/>
     <ProjectReference Include="DesktopNotifications/DesktopNotifications.FreeDesktop/DesktopNotifications.FreeDesktop.csproj"/>
