@@ -5,7 +5,8 @@
     <ApplicationIcon>icon/pixel.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <OS Condition="$(RuntimeIdentifier.StartsWith(win))">Windows_NT</OS>
+    <isWindows>false</isWindows>
+    <isWindows Condition="$(RuntimeIdentifier.StartsWith(win)) or ($(RuntimeIdentifier) == '' and '$(OS)' == Windows_NT)">true</isWindows>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -16,7 +17,24 @@
     <desktopNotificationsFramework>net6.0</desktopNotificationsFramework>
   </PropertyGroup>
 
-  <Target Name="includeGTKOnWindows" BeforeTargets="BeforeBuild" Condition="$(OS) == Windows_NT">
+  <PropertyGroup Condition="$(isWindows)">
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <desktopNotificationsFramework>net6.0-windows10.0.17763.0</desktopNotificationsFramework>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <Compile Include="*.cs" Exclude="DesktopNotifications/**/*.cs"/>
+    <EmbeddedResource Include="icon/pixel.png" LogicalName="icon.png"/>
+
+    <ProjectReference Include="Desktop*/DesktopNotifications/*.csproj;Desktop*/Desktop*.FreeDesktop/*.csproj;Desktop*/Desktop*.Windows/*.csproj">
+      <Properties>isWindows=$(isWindows);TargetFramework=$(desktopNotificationsFramework)</Properties>
+    </ProjectReference>
+
+    <PackageReference Include="GtkSharp" Version="3.24.24.95"/>
+    <PackageReference Include="GtkSharp.Dependencies" Version="1.1.1" Condition="$(isWindows)"/>
+  </ItemGroup>
+
+  <Target Name="includeGTKOnWindows" BeforeTargets="BeforeBuild" Condition="$(isWindows)">
     <ItemGroup>
       <gtk Include="$(OutDir)bin/*;$(OutDir)lib/**/*;$(OutDir)share/**/*" Exclude="$(OutDir)share/themes/**/*"/>
       <EmbeddedResource Include="@(gtk)">
@@ -27,24 +45,8 @@
   </Target>
 
   <Target Name="linkExecutable" AfterTargets="Publish">
-    <PropertyGroup><extension Condition="$(OS) == Windows_NT">.exe</extension></PropertyGroup>
+    <PropertyGroup><extension Condition="$(isWindows)">.exe</extension></PropertyGroup>
     <ItemGroup><executable Include="$([MSBuild]::NormalizePath($(OutDir)))publish/$(AssemblyName)$(extension)"/></ItemGroup>
     <Copy UseSymboliclinksIfPossible="true" SourceFiles="@(executable)" DestinationFiles="$(BaseOutputPath)%(Filename)-$(RuntimeIdentifier)%(Extension)"/>
   </Target>
-  
-  <PropertyGroup Condition="$(OS) == Windows_NT">
-    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
-    <desktopNotificationsFramework>net6.0-windows10.0.17763.0</desktopNotificationsFramework>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Include="*.cs" Exclude="DesktopNotifications/**/*.cs"/>
-    <EmbeddedResource Include="icon/pixel.png" LogicalName="icon.png"/>
-
-    <ProjectReference Include="Desktop*/DesktopNotifications/*.csproj;Desktop*/Desktop*.FreeDesktop/*.csproj;Desktop*/Desktop*.Windows/*.csproj">
-      <Properties>OS=$(OS);TargetFramework=$(desktopNotificationsFramework)</Properties>
-    </ProjectReference>
-    <PackageReference Include="GtkSharp" Version="3.24.24.95"/>
-    <PackageReference Include="GtkSharp.Dependencies" Version="1.1.1" Condition="$(OS) == Windows_NT"/>
-  </ItemGroup>
 </Project>
