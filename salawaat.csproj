@@ -16,7 +16,7 @@
     <desktopNotificationsFramework>net6.0</desktopNotificationsFramework>
   </PropertyGroup>
 
-  <Target Name="IncludeGTKOnWindows" BeforeTargets="BeforeBuild" Condition="$(OS) == Windows_NT">
+  <Target Name="includeGTKOnWindows" BeforeTargets="BeforeBuild" Condition="$(OS) == Windows_NT">
     <ItemGroup>
       <gtk Include="$(OutDir)bin/*;$(OutDir)lib/**/*;$(OutDir)share/**/*" Exclude="$(OutDir)share/themes/**/*"/>
       <EmbeddedResource Include="@(gtk)">
@@ -26,6 +26,12 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="linkExecutable" AfterTargets="Publish">
+    <PropertyGroup><extension Condition="$(OS) == Windows_NT">.exe</extension></PropertyGroup>
+    <ItemGroup><executable Include="$([MSBuild]::NormalizePath($(OutDir)))publish/$(AssemblyName)$(extension)"/></ItemGroup>
+    <Copy UseSymboliclinksIfPossible="true" SourceFiles="@(executable)" DestinationFiles="$(BaseOutputPath)%(Filename)-$(RuntimeIdentifier)%(Extension)"/>
+  </Target>
+  
   <PropertyGroup Condition="$(OS) == Windows_NT">
     <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
     <desktopNotificationsFramework>net6.0-windows10.0.17763.0</desktopNotificationsFramework>
