@@ -280,7 +280,7 @@ void writeConfiguration(Configuration? configuration = null) {
 	configuration ??= new Configuration(latitude.Text, longitude.Text, alert.ValueAsInt, persist.Active, relative.Active);
 
 	using var _ = useLock(cfgLock.EnterWriteLock, cfgLock.ExitWriteLock);
-	using var file = File.Open(config, FileMode.OpenOrCreate | FileMode.Truncate, FileAccess.Write, FileShare.ReadWrite);
+	using var file = File.Open(config, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
 	JsonSerializer.Serialize(file, configuration, new JsonSerializerOptions() {WriteIndented = true});
 }
 
