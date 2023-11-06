@@ -12,4 +12,6 @@ except insofar as the contribution's content emphasizes otherwise (for example i
 
 --------------------------------------------------------------------------------
 
-This application uses [GtkSharp](https://github.com/GtkSharp/GtkSharp) which and whose use are covered by [the GNU Library General Public License version 2](https://raw.githubusercontent.com/GtkSharp/GtkSharp/develop/LICENSE).
+This application uses
+- [GtkSharp](https://github.com/GtkSharp/GtkSharp) which and whose use are covered by [the GNU Library General Public License version 2](https://raw.githubusercontent.com/GtkSharp/GtkSharp/develop/LICENSE)
+- [GtkSharp.Dependencies](https://www.nuget.org/packages/GtkSharp.Dependencies) which and whose use are covered by [the GNU Lesser General Public License version 2.1](https://licenses.nuget.org/LGPL-2.1-only).

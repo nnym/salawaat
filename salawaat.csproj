@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <ApplicationIcon>icon/pixel.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OS Condition="$(RuntimeIdentifier.StartsWith(win))">Windows_NT</OS>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -11,19 +13,32 @@
     <LangVersion>preview</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
+    <desktopNotificationsFramework>net6.0</desktopNotificationsFramework>
   </PropertyGroup>
+
+  <Target Name="IncludeGTKOnWindows" BeforeTargets="BeforeBuild" Condition="$(OS) == Windows_NT">
+    <ItemGroup>
+      <gtk Include="$(OutDir)bin/*;$(OutDir)lib/**/*;$(OutDir)share/**/*" Exclude="$(OutDir)share/themes/**/*"/>
+      <EmbeddedResource Include="@(gtk)">
+        <LogicalName>gtk/$([MSBuild]::MakeRelative($(OutDir), "%(FullPath)"))</LogicalName>
+        <LogicalName Condition="$([System.String]::New('%(Identity)').StartsWith($(OutDir)bin/))">gtk/%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
 
   <PropertyGroup Condition="$(OS) == Windows_NT">
     <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <desktopNotificationsFramework>net6.0-windows10.0.17763.0</desktopNotificationsFramework>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="*.cs" Exclude="DesktopNotifications/**/*.cs"/>
-    <EmbeddedResource Include="icon/pixel.png"/>
+    <EmbeddedResource Include="icon/pixel.png" LogicalName="icon.png"/>
 
-    <ProjectReference Include="DesktopNotifications/DesktopNotifications/DesktopNotifications.csproj"/>
-    <ProjectReference Include="DesktopNotifications/DesktopNotifications.FreeDesktop/DesktopNotifications.FreeDesktop.csproj"/>
-    <ProjectReference Include="DesktopNotifications/DesktopNotifications.Windows/DesktopNotifications.Windows.csproj"/>
+    <ProjectReference Include="Desktop*/DesktopNotifications/*.csproj;Desktop*/Desktop*.FreeDesktop/*.csproj;Desktop*/Desktop*.Windows/*.csproj">
+      <Properties>OS=$(OS);TargetFramework=$(desktopNotificationsFramework)</Properties>
+    </ProjectReference>
     <PackageReference Include="GtkSharp" Version="3.24.24.95"/>
+    <PackageReference Include="GtkSharp.Dependencies" Version="1.1.1" Condition="$(OS) == Windows_NT"/>
   </ItemGroup>
 </Project>

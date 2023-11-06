@@ -4,14 +4,33 @@ using DesktopNotifications.FreeDesktop;
 using DesktopNotifications.Windows;
 using Gdk;
 using Gtk;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Action = System.Action;
+using SpecialFolder = System.Environment.SpecialFolder;
 using static Const;
 
-var config = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + $"/{NAME}.json";
+if (OperatingSystem.IsWindows()) {
+	var assembly = Assembly.GetExecutingAssembly();
+	var v = typeof(Application).Assembly.GetName().Version!;
+	var gtkDirectory = Path.Combine(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "Gtk", $"{v.Major}.{v.Minor}.{v.Build}");
+
+	foreach (var path in assembly.GetManifestResourceNames().Where(r => r.StartsWith("gtk/"))) {
+		using var @in = assembly.GetManifestResourceStream(path)!;
+		var dst = gtkDirectory + path[3..];
+
+		if (!File.Exists(dst)) {
+			Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+			using var @out = File.OpenWrite(dst);
+			@in.CopyTo(@out);
+		}
+	}
+}
+
+var config = Environment.GetFolderPath(SpecialFolder.ApplicationData) + $"/{NAME}.json";
 var tmp = System.IO.Path.GetTempPath() + NAME;
 
 Application application = new(ID, GLib.ApplicationFlags.None);
@@ -22,8 +41,8 @@ if (application.IsRemote) {
 	return 0;
 }
 
-INotificationManager? notifMan = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new FreeDesktopNotificationManager()
-	: RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? new WindowsNotificationManager()
+INotificationManager? notifMan = OperatingSystem.IsLinux() ? new FreeDesktopNotificationManager()
+	: OperatingSystem.IsWindows() ? new WindowsNotificationManager()
 	: null;
 
 if (notifMan != null) await notifMan.Initialize();
@@ -34,7 +53,7 @@ var loading = Task.CompletedTask;
 Lazy<HttpClient> http = new();
 ReaderWriterLockSlim cfgLock = new();
 
-ApplicationWindow window = new(application) {Title = NAME, Icon = Pixbuf.LoadFromResource("salawaat.icon.pixel.png"), DefaultSize = new(320, 220)};
+ApplicationWindow window = new(application) {Title = NAME, Icon = Pixbuf.LoadFromResource("icon.png"), DefaultSize = new(320, 220)};
 var iconified = false;
 window.WindowStateEvent += (_, e) => iconified = ((EventWindowState) e.Args[0]).NewWindowState.HasFlag(WindowState.Iconified);
 
