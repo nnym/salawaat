@@ -101,8 +101,8 @@ Prayer? currentPrayer = null, nextPrayer = null;
 Prayer[] prayers = {new("fajr"), new("shuruq"), new("dhuhr"), new("'asr"), new("maghrib"), new("'isha")};
 fillTable(0);
 
-var latitude = entrySetting(0, "latitude", "the first component of your GCS coordinates", 20);
-var longitude = entrySetting(1, "longitude", "the second component of your GCS coordinates", 20);
+var latitude = entrySetting(0, "latitude", "the first component of your coordinates", 20);
+var longitude = entrySetting(1, "longitude", "the second component of your coordinates", 20);
 var alert = setting(2, "minutes of notice", "the time period before the first prayer alert", new SpinButton(0, 999, 1) {Value = 15});
 var relative = setting(3, "relative times", "show times from the current time until the same time tomorrow", new Switch() {State = true, Halign = Align.Start});
 var persist = setting(4, "system tray icon", "keep running in the background when closed", new Switch() {State = true, Halign = Align.Start});
