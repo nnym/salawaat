@@ -1,4 +1,4 @@
-﻿#pragma warning disable 612, 8500
+﻿#pragma warning disable 612, 8500, 8624
 using DesktopNotifications;
 using DesktopNotifications.FreeDesktop;
 using DesktopNotifications.Windows;
@@ -6,17 +6,21 @@ using Gdk;
 using Gtk;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Action = System.Action;
+using Process = System.Diagnostics.Process;
 using SpecialFolder = System.Environment.SpecialFolder;
 using static Const;
+
+#if WINDOWS
+	using StartupHelper;
+#endif
 
 if (OperatingSystem.IsWindows()) {
 	var assembly = Assembly.GetExecutingAssembly();
 	var v = typeof(Application).Assembly.GetName().Version!;
-	var gtkDirectory = Path.Combine(Environment.GetFolderPath(SpecialFolder.LocalApplicationData), "Gtk", $"{v.Major}.{v.Minor}.{v.Build}");
+	var gtkDirectory = SpecialFolder.LocalApplicationData.path() + $"/Gtk/{v.Major}.{v.Minor}.{v.Build}";
 
 	foreach (var path in assembly.GetManifestResourceNames().Where(r => r.StartsWith("gtk/"))) {
 		using var @in = assembly.GetManifestResourceStream(path)!;
@@ -30,9 +34,6 @@ if (OperatingSystem.IsWindows()) {
 	}
 }
 
-var config = Environment.GetFolderPath(SpecialFolder.ApplicationData) + $"/{NAME}.json";
-var tmp = System.IO.Path.GetTempPath() + NAME;
-
 Application application = new(ID, GLib.ApplicationFlags.None);
 application.Register(GLib.Cancellable.Current);
 
@@ -40,6 +41,17 @@ if (application.IsRemote) {
 	application.ActivateAction(PRESENT_ACTION, null);
 	return 0;
 }
+
+var config = SpecialFolder.ApplicationData.path() + $"/{NAME}.json";
+var tmp = System.IO.Path.GetTempPath() + NAME;
+var executable = Process.GetCurrentProcess().MainModule!.FileName;
+
+#if WINDOWS
+	StartupManager startupManager = new(executable, ID, RegistrationScope.Local, false, "-H");
+	startupManager.FixWorkingDirectory();
+#else
+	var autostartPath = OperatingSystem.IsLinux() ? SpecialFolder.ApplicationData.path() + $"/autostart/{NAME}.desktop" : null;
+#endif
 
 INotificationManager? notifMan = OperatingSystem.IsLinux() ? new FreeDesktopNotificationManager()
 	: OperatingSystem.IsWindows() ? new WindowsNotificationManager()
@@ -56,6 +68,9 @@ ReaderWriterLockSlim cfgLock = new();
 ApplicationWindow window = new(application) {Title = NAME, Icon = Pixbuf.LoadFromResource("icon.png"), DefaultSize = new(320, 220)};
 var iconified = false;
 window.WindowStateEvent += (_, e) => iconified = ((EventWindowState) e.Args[0]).NewWindowState.HasFlag(WindowState.Iconified);
+
+CssProvider.Default.LoadFromData(".tooltip {border-bottom: 2px dotted}");
+StyleContext.AddProviderForScreen(window.Screen, CssProvider.Default, 0);
 
 var presentAction = new GLib.SimpleAction(PRESENT_ACTION, null);
 presentAction.Activated += (_, _) => window.Present();
@@ -86,18 +101,13 @@ Prayer? currentPrayer = null, nextPrayer = null;
 Prayer[] prayers = {new("fajr"), new("shuruq"), new("dhuhr"), new("'asr"), new("maghrib"), new("'isha")};
 fillTable(0);
 
-var latitude = entrySetting(0, "latitude", 20);
-var longitude = entrySetting(1, "longitude", 20);
-var alert = setting(2, "notice period in minutes", new SpinButton(0, 999, 1) {Value = 15});
-Switch relative = setting(3, "relative times", new Switch() {State = true, Halign = Align.Start});
-Switch persist = setting(4, "system tray icon", new Switch() {State = true, Halign = Align.Start});
+var latitude = entrySetting(0, "latitude", "the first component of your GCS coordinates", 20);
+var longitude = entrySetting(1, "longitude", "the second component of your GCS coordinates", 20);
+var alert = setting(2, "minutes of notice", "the time period before the first prayer alert", new SpinButton(0, 999, 1) {Value = 15});
+var relative = setting(3, "relative times", "show times from the current time until the same time tomorrow", new Switch() {State = true, Halign = Align.Start});
+var persist = setting(4, "system tray icon", "keep running in the background when closed", new Switch() {State = true, Halign = Align.Start});
+var autostart = setting(5, "autostart", "run in the background on login", new Switch() {Halign = Align.Start});
 Calendar calendar = new();
-
-calendar.DaySelected += (_, _) => markToday();
-calendar.DaySelectedDoubleClick += (_, _) => {
-	relative.State = false;
-	refresh.Click();
-};
 
 add(buttonRow, exit, refresh);
 add(settingBox, settings, calendar, buttonRow);
@@ -146,11 +156,6 @@ settingExpander.Activated += (_, _) => {
 	}
 };
 
-persist.AddNotification("active", (_, _) => {
-	icon.Visible = persist.Active;
-	writeConfiguration(readConfiguration() with {statusIcon = persist.Active});
-});
-
 relative.AddNotification("state", (_, _) => {
 	load(setToday: relative.State);
 	writeConfiguration(readConfiguration() with {relative = relative.Active});
@@ -163,18 +168,54 @@ refresh.Clicked += (_, _) => {
 	if (!showToday && coordinates != (latitude.Text, longitude.Text)) load(true);
 };
 
+persist.AddNotification("active", (_, _) => {
+	icon.Visible = persist.Active;
+	writeConfiguration(readConfiguration() with {statusIcon = persist.Active});
+});
+
+autostart.AddNotification("active", (_, _) => {
+	#if WINDOWS
+		if (autostart.State) startupManager.Register();
+		else startupManager.Unregister();
+	#else
+		if (OperatingSystem.IsLinux()) {
+			if (autostart.State) {
+				File.WriteAllText(autostartPath!,
+@$"[Desktop Entry]
+Name={NAME}
+Type=Application
+Exec={executable} -H
+");
+			} else {
+				File.Delete(autostartPath!);
+			}
+		}
+	#endif
+
+	writeConfiguration(readConfiguration() with {autostart = autostart.Active});
+});
+
+calendar.DaySelected += (_, _) => markToday();
+calendar.DaySelectedDoubleClick += (_, _) => {
+	relative.State = false;
+	refresh.Click();
+};
+
 debug("Loading configuration.");
 
 if (File.Exists(config)) {
-	var c = readConfiguration();
-	latitude.Text = c.latitude;
-	longitude.Text = c.longitude;
-	alert.Value = c.noticePeriod;
-	relative.State = c.relative;
-	icon.Visible = persist.Active = c.statusIcon;
+	(latitude.Text, longitude.Text, alert.Value, relative.State, icon.Visible, autostart.State) = readConfiguration();
 }
 
-if (Environment.GetCommandLineArgs().Contains("--hidden")) {
+if (autostart.State ^ (
+#if WINDOWS
+	startupManager.IsRegistered
+#else
+	File.Exists(autostartPath) && Regex.IsMatch(File.ReadAllText(autostartPath), $"^Exec={executable} -H")
+#endif
+)) autostart.State = true;
+
+if (Environment.GetCommandLineArgs().Any(a => a is "-H" or "--hidden")) {
 	persist.Active = true;
 } else {
 	window.Present();
@@ -252,14 +293,21 @@ void fillTable(int offset) {
 	}
 }
 
-T setting<T>(int row, string name, T input) where T: Widget {
-	settings.Attach(new Label(name) {Halign = Align.Start}, 0, row, 1, 1);
+T setting<T>(int row, string name, string? tooltip, T input) where T: Widget {
+	Label label = new(name) {Halign = Align.Start};
+
+	if (tooltip != null) {
+		label.StyleContext.AddClass("tooltip");
+		label.TooltipText = tooltip;
+	}
+
+	settings.Attach(label, 0, row, 1, 1);
 	settings.Attach(input, 1, row, 1, 1);
 
 	return input;
 }
 
-Entry entrySetting(int row, string name, int maxLength) => setting(row, name, new Entry() {ActivatesDefault = true, MaxLength = maxLength});
+Entry entrySetting(int row, string name, string? tooltip, int maxLength) => setting(row, name, tooltip, new Entry() {ActivatesDefault = true, MaxLength = maxLength});
 
 void markToday() {
 	calendar.ClearMarks();
@@ -277,7 +325,7 @@ Configuration readConfiguration() {
 }
 
 void writeConfiguration(Configuration? configuration = null) {
-	configuration ??= new Configuration(latitude.Text, longitude.Text, alert.ValueAsInt, persist.Active, relative.Active);
+	configuration ??= new(latitude.Text, longitude.Text, alert.ValueAsInt, persist.State, relative.State, autostart.State);
 
 	using var _ = useLock(cfgLock.EnterWriteLock, cfgLock.ExitWriteLock);
 	using var file = File.Open(config, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
@@ -407,7 +455,7 @@ Times[]? loadYear(DateTime requestTime) {
 
 	if (year == null) {
 		error ??= new(window, 0, MessageType.Error, ButtonsType.Close, false, "An unknown error occurred.");
-		idleTask(() => error.Present());
+		idleTask(error.Present);
 
 		return null;
 	}
@@ -489,11 +537,17 @@ class Const {
 		PRESENT_ACTION = "app.present";
 }
 
+static class Extensions {
+	public static IEnumerator<int> GetEnumerator(this System.Range range) => Enumerable.Range(range.Start.Value, range.End.Value - range.Start.Value).GetEnumerator();
+
+	public static string path(this SpecialFolder folder) => Environment.GetFolderPath(folder);
+}
+
 public record Disposable(Action dispose) : IDisposable {
 	public void Dispose() => this.dispose();
 }
 
-public record struct Configuration(string latitude, string longitude, int noticePeriod, bool relative, bool statusIcon);
+public record struct Configuration(string latitude, string longitude, int noticePeriod, bool relative, bool statusIcon, bool autostart);
 public record struct SourceTimes(Day[] times);
 public record struct Day(Times times);
 
