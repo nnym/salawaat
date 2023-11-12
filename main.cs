@@ -127,7 +127,7 @@ StatusIcon icon = new() {Icon = window.Icon, Title = NAME, TooltipText = NAME};
 icon.PopupMenu += (_, args) => icon.PresentMenu(menu, (uint) args.Args[0], (uint) args.Args[1]);
 icon.Activate += (_, _) => {
 	if (iconified || !window.Visible) window.Present();
-	else window.Hide();
+	else window.Close();
 };
 
 window.DeleteEvent += (_, args) => {
